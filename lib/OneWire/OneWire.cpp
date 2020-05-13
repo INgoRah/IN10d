@@ -173,11 +173,12 @@ void OneWire::begin(uint8_t pin)
 	t_slot = 80;
 	t_w0l = 70;
 	/* read timing, afterwards, master can sample */
-	t_w1l = 9; // active low, > 1 us, long enough to signal bus lock, 7 .. 9
-	t_rc = 4; // recovery, cable C to charge, t_int + t_rc < 15 us
+	t_w1l = 10; // active low, > 1 us, long enough to signal bus lock, 7 .. 9
 	// max sample time after int (spec: 15 us). Same as t_low for write
 	t_msr = 14; // read sample T_MSR 13 .. 15 - T_W1L / t_int
+	t_rc = 6; // recovery, cable C to charge, t_int + t_rc < 15 us
 #endif
+	mAddress = pin;
 }
 
 // Perform the onewire reset function.  We will wait up to 250uS for
@@ -230,17 +231,16 @@ void OneWire::write_bit(uint8_t v)
 	DIRECT_MODE_OUTPUT(reg, mask);	// drive output low
 	if (v & 1) {
 		/* was 10 us, now max 13 us, recommended 11 us, ds2482: 8 us */
-		delayMicroseconds(T_W1L);
+		delayMicroseconds(11 /* T_W1L */);
 		DIRECT_WRITE_HIGH(reg, mask);	// drive output high
 		interrupts();
-		delayMicroseconds(T_SLOT - T_W1L); // was 55
+		delayMicroseconds(59 /* T_SLOT - T_W1L */);
 	} else {
-		// was 65
-		delayMicroseconds(T_W0L);
+
+		delayMicroseconds(65 /* T_W0L */);
 		DIRECT_WRITE_HIGH(reg, mask);	// drive output high
 		interrupts();
-		// was 5
-		delayMicroseconds(T_SLOT - T_W0L);
+		delayMicroseconds(5 /*T_SLOT - T_W0L */);
 	}
 }
 
@@ -257,15 +257,15 @@ uint8_t OneWire::read_bit(void)
 	noInterrupts();
 	DIRECT_MODE_OUTPUT(reg, mask);
 	DIRECT_WRITE_LOW(reg, mask);
-	delayMicroseconds(T_W1L - T_RC); // was 3, ds2482: 8 us
+	delayMicroseconds(3 /*T_W1L - T_RC*/); // was 3, ds2482: 8 us
 	DIRECT_MODE_INPUT(reg, mask);	// let pin float, pull up will raise
 	// result must be read max after max 15 us
 	// ds2482: @14 , T_MSR = 14 -8 = 6
-	delayMicroseconds(T_MSR - T_W1L + T_RC); // was 10, now 11
+	delayMicroseconds(11 /*T_MSR - T_W1L + T_RC */); // was 10, now 11
 	r = DIRECT_READ(reg, mask);
 	interrupts();
 	// ds2482: ~ 70
-	delayMicroseconds(T_SLOT - T_W1L - T_MSR); // was 53, now 85
+	delayMicroseconds(58 /* T_SLOT - T_W1L - T_MSR */); // was 53, now 85
 	return r;
 }
 
@@ -303,7 +303,7 @@ uint8_t OneWire::write(uint8_t v, uint8_t power /* = 0 */) {
     return v;
 }
 
-void OneWire::write_bytes(const uint8_t *buf, uint16_t count, bool power /* = 0 */) {
+void OneWire::write(const uint8_t *buf, uint16_t count, uint8_t power /* = 0 */) {
   for (uint16_t i = 0 ; i < count ; i++)
     write(buf[i]);
   if (!power) {
@@ -325,11 +325,6 @@ uint8_t OneWire::read() {
         if ( OneWire::read_bit()) r |= bitMask;
     }
     return r;
-}
-
-void OneWire::read_bytes(uint8_t *buf, uint16_t count) {
-  for (uint16_t i = 0 ; i < count ; i++)
-    buf[i] = read();
 }
 
 //
@@ -367,11 +362,11 @@ void OneWire::depower()
 void OneWire::reset_search()
 {
   // reset the search state
-  LastDiscrepancy = 0;
+  searchLastDisrepancy = 0;
   LastDeviceFlag = false;
   LastFamilyDiscrepancy = 0;
   for(int i = 7; ; i--) {
-    ROM_NO[i] = 0;
+    searchAddress[i] = 0;
     if ( i == 0) break;
   }
 }
@@ -382,10 +377,10 @@ void OneWire::reset_search()
 void OneWire::target_search(uint8_t family_code)
 {
    // set the search state to find SearchFamily type devices
-   ROM_NO[0] = family_code;
+   searchAddress[0] = family_code;
    for (uint8_t i = 1; i < 8; i++)
-      ROM_NO[i] = 0;
-   LastDiscrepancy = 64;
+      searchAddress[i] = 0;
+   searchLastDisrepancy = 64;
    LastFamilyDiscrepancy = 0;
    LastDeviceFlag = false;
 }
@@ -403,7 +398,7 @@ void OneWire::target_search(uint8_t family_code)
 //--------------------------------------------------------------------------
 // Perform the 1-Wire Search Algorithm on the 1-Wire bus using the existing
 // search state.
-// Return TRUE  : device found, ROM number in ROM_NO buffer
+// Return TRUE  : device found, ROM number in searchAddress buffer
 //        FALSE : device not found, end of search
 //
 bool OneWire::search(uint8_t *newAddr, bool search_mode /* = true */)
@@ -427,7 +422,7 @@ bool OneWire::search(uint8_t *newAddr, bool search_mode /* = true */)
       // 1-Wire reset
       if (!reset()) {
          // reset the search
-         LastDiscrepancy = 0;
+         searchLastDisrepancy = 0;
          LastDeviceFlag = false;
          LastFamilyDiscrepancy = 0;
          return false;
@@ -448,6 +443,7 @@ bool OneWire::search(uint8_t *newAddr, bool search_mode /* = true */)
          cmp_id_bit = read_bit();
          // check for no devices on 1-wire
          if ((id_bit == 1) && (cmp_id_bit == 1)) {
+			status = stNoDevs;
             break;
          } else {
             // all devices coupled have 0 or 1
@@ -456,11 +452,11 @@ bool OneWire::search(uint8_t *newAddr, bool search_mode /* = true */)
             } else {
                // if this discrepancy if before the Last Discrepancy
                // on a previous next then pick the same as last time
-               if (id_bit_number < LastDiscrepancy) {
-                  search_direction = ((ROM_NO[rom_byte_number] & rom_byte_mask) > 0);
+               if (id_bit_number < searchLastDisrepancy) {
+                  search_direction = ((searchAddress[rom_byte_number] & rom_byte_mask) > 0);
                } else {
                   // if equal to last pick 1, if not then pick 0
-                  search_direction = (id_bit_number == LastDiscrepancy);
+                  search_direction = (id_bit_number == searchLastDisrepancy);
                }
                // if 0 was picked then record its position in LastZero
                if (search_direction == 0) {
@@ -475,9 +471,9 @@ bool OneWire::search(uint8_t *newAddr, bool search_mode /* = true */)
             // set or clear the bit in the ROM byte rom_byte_number
             // with mask rom_byte_mask
             if (search_direction == 1)
-              ROM_NO[rom_byte_number] |= rom_byte_mask;
+              searchAddress[rom_byte_number] |= rom_byte_mask;
             else
-              ROM_NO[rom_byte_number] &= ~rom_byte_mask;
+              searchAddress[rom_byte_number] &= ~rom_byte_mask;
 
             // serial number search direction write bit
             write_bit(search_direction);
@@ -498,11 +494,11 @@ bool OneWire::search(uint8_t *newAddr, bool search_mode /* = true */)
 
       // if the search was successful then
       if (!(id_bit_number < 65)) {
-         // search successful so set LastDiscrepancy,LastDeviceFlag,search_result
-         LastDiscrepancy = last_zero;
+         // search successful so set searchLastDisrepancy,LastDeviceFlag,search_result
+         searchLastDisrepancy = last_zero;
 
          // check for last device
-         if (LastDiscrepancy == 0) {
+         if (searchLastDisrepancy == 0) {
             LastDeviceFlag = true;
          }
          search_result = true;
@@ -510,59 +506,15 @@ bool OneWire::search(uint8_t *newAddr, bool search_mode /* = true */)
    }
 
    // if no device found then reset counters so next 'search' will be like a first
-   if (!search_result || !ROM_NO[0]) {
-      LastDiscrepancy = 0;
+   if (!search_result || !searchAddress[0]) {
+      searchLastDisrepancy = 0;
       LastDeviceFlag = false;
       LastFamilyDiscrepancy = 0;
       search_result = false;
    } else {
-      for (int i = 0; i < 8; i++) newAddr[i] = ROM_NO[i];
+      for (int i = 0; i < 8; i++) newAddr[i] = searchAddress[i];
    }
    return search_result;
   }
-
-#endif
-
-#if ONEWIRE_CRC
-// The 1-Wire CRC scheme is described in Maxim Application Note 27:
-// "Understanding and Using Cyclic Redundancy Checks with Maxim iButton Products"
-//
-
-#if ONEWIRE_CRC16
-bool OneWire::check_crc16(const uint8_t* input, uint16_t len, const uint8_t* inverted_crc, uint16_t crc)
-{
-    crc = ~crc16(input, len, crc);
-    return (crc & 0xFF) == inverted_crc[0] && (crc >> 8) == inverted_crc[1];
-}
-
-uint16_t OneWire::crc16(const uint8_t* input, uint16_t len, uint16_t crc)
-{
-#if defined(__AVR__)
-    for (uint16_t i = 0 ; i < len ; i++) {
-        crc = _crc16_update(crc, input[i]);
-    }
-#else
-    static const uint8_t oddparity[16] =
-        { 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0 };
-
-    for (uint16_t i = 0 ; i < len ; i++) {
-      // Even though we're just copying a byte from the input,
-      // we'll be doing 16-bit computation with it.
-      uint16_t cdata = input[i];
-      cdata = (cdata ^ crc) & 0xff;
-      crc >>= 8;
-
-      if (oddparity[cdata & 0x0F] ^ oddparity[cdata >> 4])
-          crc ^= 0xC001;
-
-      cdata <<= 6;
-      crc ^= cdata;
-      cdata <<= 1;
-      crc ^= cdata;
-    }
-#endif
-    return crc;
-}
-#endif
 
 #endif

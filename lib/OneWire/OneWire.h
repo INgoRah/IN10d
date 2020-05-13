@@ -55,11 +55,6 @@
 
 // Board-specific macros for direct GPIO
 #include "util/OneWire_direct_regtype.h"
-#define OW_MATCH_ROM    0x55
-#define OW_SKIP_ROM     0xCC
-#define OW_SEARCH_ROM   0xF0
-/* start new search */
-#define OW_SEARCH_FIRST 0xFF
 
 class OneWire : public OneWireBase
 {
@@ -68,9 +63,6 @@ class OneWire : public OneWireBase
     volatile IO_REG_TYPE *baseReg;
 
 #if ONEWIRE_SEARCH
-    // global search state
-    unsigned char ROM_NO[8];
-    uint8_t LastDiscrepancy;
     uint8_t LastFamilyDiscrepancy;
     bool LastDeviceFlag;
 #endif
@@ -99,12 +91,12 @@ class OneWire : public OneWireBase
     void skip(void);
 
 	uint8_t write(uint8_t v, uint8_t power = 0 );
-    void write_bytes(const uint8_t *buf, uint16_t count, bool power = 0);
+    void write(const uint8_t *buf, uint16_t count, uint8_t power = 0);
 
     // Read a byte.
     uint8_t read(void);
 
-    void read_bytes(uint8_t *buf, uint16_t count);
+    void read(uint8_t *buf, uint16_t count);
 
     // Write a bit. The bus is always left powered at the end, see
     // note in write() about that.

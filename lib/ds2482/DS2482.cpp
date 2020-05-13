@@ -31,7 +31,6 @@
 #define PTR_READ 0xe1
 #define PTR_CONFIG 0xc3
 
-
 DS2482::DS2482(uint8_t addr)
 {
 	mAddress = 0x18 | addr;
@@ -72,27 +71,26 @@ uint8_t DS2482::wireReadStatus(bool setPtr)
 
 uint8_t DS2482::busyWait(bool setPtr)
 {
-	uint8_t status;
-	int loopCount = 1000;
+	uint8_t res;
+	int loopCount = 500;
 
 	if (setPtr)
 		setReadPtr(PTR_STATUS);
-	while((status = _read()) & DS2482_STATUS_BUSY)
+	while((res = _read()) & DS2482_STATUS_BUSY)
 	{
-		if (--loopCount <= 0)
-		{
-			mTimeout = 1;
+		if (--loopCount == 0) {
+			status = stTimeout;
 			break;
 		}
 		delayMicroseconds(20);
 	}
-	return status;
+	return res;
 }
 
 //----------interface
 void DS2482::resetDev()
 {
-	mTimeout = 0;
+	status = stOk;
 	begin();
 	Wire.write(0xf0);
 	end();
@@ -112,7 +110,7 @@ bool DS2482::configureDev(uint8_t config)
 bool DS2482::selectChannel(uint8_t channel)
 {
 	const byte R_chan[8] = { 0xB8, 0xB1, 0xAA, 0xA3, 0x9C, 0x95, 0x8E, 0x87 };
-	uint8_t ch, ch_read;
+	uint8_t ch;
 
 	switch (channel)
 	{
@@ -162,9 +160,9 @@ bool DS2482::reset()
 	Wire.write(0xb4);
 	end();
 
-	uint8_t status = busyWait();
+	uint8_t stat = busyWait();
 
-	return status & DS2482_STATUS_PPD ? true : false;
+	return stat & DS2482_STATUS_PPD ? true : false;
 }
 
 uint8_t DS2482::write(uint8_t b, uint8_t power)
@@ -201,18 +199,18 @@ void DS2482::wireWriteBit(uint8_t bit)
 uint8_t DS2482::wireReadBit()
 {
 	wireWriteBit(1);
-	uint8_t status = busyWait(true);
-	return status & DS2482_STATUS_SBR ? 1 : 0;
+	uint8_t stat = busyWait(true);
+	return stat & DS2482_STATUS_SBR ? 1 : 0;
 }
 
 void DS2482::skip()
 {
-	write(0xcc);
+	write(OW_SKIP_ROM);
 }
 
 void DS2482::select(const uint8_t rom[8])
 {
-	write(0x55);
+	write(OW_MATCH_ROM);
 	for (int i=0;i<8;i++)
 		write(rom[i]);
 }
@@ -226,6 +224,7 @@ void DS2482::reset_search()
 
 	for(uint8_t i = 0; i<8; i++)
 		searchAddress[i] = 0;
+	status = stOk;
 }
 
 bool DS2482::search(uint8_t *newAddr, bool search_mode)
@@ -233,6 +232,7 @@ bool DS2482::search(uint8_t *newAddr, bool search_mode)
 	uint8_t i;
 	uint8_t direction;
 	uint8_t last_zero=0;
+	uint8_t stat;
 
 	if (searchExhausted)
 		return false;
@@ -243,10 +243,10 @@ bool DS2482::search(uint8_t *newAddr, bool search_mode)
 	busyWait();
 	if (search_mode == true)
 		// NORMAL SEARCH
-		write(0xf0);
+		write(OW_SEARCH_ROM);
 	else
 		// CONDITIONAL SEARCH
-		write(0xEC);
+		write(OW_COND_SEARC_ROM);
 
 	for(i=1;i<65;i++)
 	{
@@ -261,26 +261,29 @@ bool DS2482::search(uint8_t *newAddr, bool search_mode)
 			direction = i == searchLastDisrepancy;
 
 		busyWait();
-		if (mTimeout) {
+		if (status == stTimeout) {
 			Serial.println("Search Timeout");
-			return -1;
+			return false;
 		}
 		begin();
 		Wire.write(0x78);
 		Wire.write(direction ? 0x80 : 0);
 		end();
-		uint8_t status = busyWait();
-		if (mTimeout) {
+		stat = busyWait();
+		if (status == stTimeout) {
 			Serial.println("Search Timeout");
-			return -1;
+			return false;
 		}
 
-		uint8_t id = status & DS2482_STATUS_SBR;
-		uint8_t comp_id = status & DS2482_STATUS_TSB;
-		direction = status & DS2482_STATUS_DIR;
+		uint8_t id = stat & DS2482_STATUS_SBR;
+		uint8_t comp_id = stat & DS2482_STATUS_TSB;
+		direction = stat & DS2482_STATUS_DIR;
 
-		if (id && comp_id)
-			return 0;
+		if (id && comp_id) {
+			// no devices on 1-wire
+			status = stNoDevs;
+			return false;
+		}
 		else
 		{
 			if (!id && !comp_id && !direction)
