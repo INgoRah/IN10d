@@ -35,6 +35,19 @@
 #define MAX_CMD_BUFSIZE 16
 
 const byte ow_pin = 3;
+
+#define MAX_BUS 3
+#define MAX_SWITCHES 4 * 12
+
+byte sw_tbl[MAX_BUS][MAX_SWITCHES][2] = { {
+{ 0, 0x0 },
+{ 0x82, 0x88 },
+{ 0, 0x0 },
+{ 0, 0x0 }
+} };
+
+byte busPtr[MAX_BUS];
+
 extern byte mode;
 
 /*
@@ -64,7 +77,7 @@ static int id;
 * Function declarations
 */
 void ow_monitor();
-bool alarm_handler(OneWireBase *ds);
+bool alarm_handler(byte busNr);
 
 void wdtAlarm() 
 {
@@ -229,7 +242,7 @@ void loop()
 		::attachInterrupt(digitalPinToInterrupt(ow_pin), ow_monitor, CHANGE);
 */
 		wdTime = millis();
-		Serial.println(F("Alarms signal "));
+		//Serial.println(F("Alarms signal "));
  		do {
 			delayMicroseconds (150);
 			p = wdt.lineRead();
@@ -247,7 +260,7 @@ void loop()
 		alarmPolling = millis();
 		if (mode & MODE_ALRAM_HANDLING) {
 			int retry = 10;
-			while (!alarm_handler(bus[alarmSignal-1])) {
+			while (!alarm_handler(alarmSignal-1)) {
 				if (retry-- == 0)
 					break;
 			};
@@ -259,7 +272,7 @@ void loop()
 		alarmPolling = millis();
 		if (mode & MODE_ALRAM_POLLING) {
 			for (int i = 0; i < 2;i++)
-				alarm_handler(bus[i]);
+				alarm_handler(i);
 		}
 	}
 	if (mode & MODE_WATCHDOG && (wdFired == 0 && millis() - wdTime > 5000)) {
@@ -280,13 +293,15 @@ void loop()
 switch table: input dev/pin to ouput bus/dev/pin
 output may have funcs like timer to switch off
 */
-bool alarm_handler(OneWireBase *ds)
+bool alarm_handler(byte busNr)
 {
+	OneWireBase *ds;
 	byte addr[8];
 	byte j = 0;
 	uint8_t i, latch, data[10], retry = 5;
 	uint8_t cnt = 10;
 
+	ds = bus[busNr];
 	ds->reset();
 	ds->reset_search();
 	while (ds->search(addr, false)) {
@@ -317,7 +332,7 @@ bool alarm_handler(OneWireBase *ds)
 				Serial.print(data[1], HEX);
 				Serial.print(" ");
 				Serial.print(data[2], HEX);
-				Serial.println(")");
+				Serial.print(") | ");
 				break;
 			case 0x28:
 				ds->reset();
@@ -332,6 +347,25 @@ bool alarm_handler(OneWireBase *ds)
 				break;
 		}
 		if (latch != 0 && latch != 0xff) {
+			union s_adr src;
+			union d_adr dst;
+
+			Serial.print(busNr, HEX);
+			Serial.print(".");
+			src.sa.adr =  addr[1];
+			src.sa.latch = latch >> 2;
+			// check for only one bit !
+			Serial.print(src.data, HEX);
+			dst.da.bus = busNr;
+			dst.da.type = 0;
+			dst.da.adr = addr[1];
+			dst.da.pio = 0;
+			Serial.print(" [");
+			Serial.print(dst.data, HEX);
+			Serial.print("/");
+			dst.da.pio = 1;
+			Serial.print(dst.data, HEX);
+			Serial.println("]");
 			/*
 			Get target switch
 			Source: <fam> <2 bit store | 6 bit id> <pins> <version> <serial> <random data ... >
@@ -339,6 +373,22 @@ bool alarm_handler(OneWireBase *ds)
 			29 A2 D9 84 0 16 04 4C:8 => 29.A2D984001604
 			29 A2 D9 84 0 16 10 B0:1 => 
 			*/
+			for (i = 0; i < MAX_SWITCHES; i++) {
+				if (src.data == sw_tbl[busNr][i][0]) {
+					dst.data = sw_tbl[busNr][i][1];
+					Serial.print(F("switch#"));
+					Serial.print(i);
+					Serial.print(" ");
+					Serial.print(src.data, HEX);
+					Serial.print(" -> ");
+					Serial.print(dst.data, HEX);
+					Serial.print(" adr=");
+					Serial.print(dst.da.adr, HEX);
+					Serial.print(" pio=");
+					Serial.println(dst.da.pio + 1, HEX);
+				}
+			}
+#if 0		
 			if ((addr[1] == 0x42) && (latch & 4)) {
 				// temp
 				static uint8_t target[8] = { 0x3A, 0x01, 0xDA, 0x84, 0x00, 0x00, 0x05, 0xA3 };
@@ -368,6 +418,7 @@ bool alarm_handler(OneWireBase *ds)
 						break;
 				} while (retry-- > 0);
 			}
+#endif			
 		} else {
 			return false;
 		}
@@ -376,15 +427,6 @@ bool alarm_handler(OneWireBase *ds)
 			break;
 		}
 	}
-#ifdef DEBUG	
-	if (j) {
-		Serial.print(j);
-		Serial.println(" alarms");
-	} else {/*
-		Serial.print("Status=");
-		Serial.println(ds->status);
-		*/
-	}
-#endif	
+
 	return j > 0 ? true : false;
 }

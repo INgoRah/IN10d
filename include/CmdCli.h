@@ -8,8 +8,10 @@
 class CmdCli
 {
 	private:
-		CmdCallback<10> cmdCallback;
+		CmdCallback<11> cmdCallback;
 		CmdParser cmdParser;
+		uint8_t atoh(const char *str);
+		void dumpSwTbl(void);
 
 		static void funcBus(CmdParser *myParser);
 		static void funcAlarmSrch(CmdParser *myParser);
@@ -22,6 +24,7 @@ class CmdCli
 		static void funcSearch(CmdParser *myParser);
 		static void funcCfg(CmdParser *myParser);
 		static void funcCmd(CmdParser *myParser);
+		static void funcSwCmd(CmdParser *myParser);
 
 public:
 	CmdCli() {;}

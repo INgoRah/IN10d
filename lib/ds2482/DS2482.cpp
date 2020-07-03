@@ -1,6 +1,7 @@
 /*
   DS2482 library for Arduino
   Copyright (C) 2009-2010 Paeae Technologies
+  Copyright (C) 2020 INgo.Rah@gmx.net
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -20,7 +21,9 @@
 	-Updates:
 		* fixed wireread busyWait (thanks Mike Jackson)
 		* Modified search function (thanks Gary Fariss)
+		* adapted the class/function layout to have a common function API with OneWire.h
 
+  https://github.com/paeaetech/paeae.git
 */
 #include "Arduino.h"  // according http://blog.makezine.com/2011/12/01/arduino-1-0-is-out-heres-what-you-need-to-know/
 

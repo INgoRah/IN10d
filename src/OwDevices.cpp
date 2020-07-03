@@ -256,7 +256,7 @@ void OwDevices::ds2408Cfg(OneWireBase *ds, byte adr[8], uint8_t* d, uint8_t len)
 	ds->reset();
 	ds->select(adr);
 	ds->write (0x75);
-	for (i = 0; i < 6; i++)
+	for (i = 0; i < len; i++)
 		ds->write(data[i]);
 	Serial.print(F("Cfg Data write "));
 	for (i = 0; i < 23; i++) {

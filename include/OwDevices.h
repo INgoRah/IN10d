@@ -3,6 +3,28 @@
 
 #include <OneWireBase.h>
 
+#define MAX_BUS 3
+#define MAX_SWITCHES 4 * 12
+
+union s_adr {
+	uint8_t data;
+	struct {
+		unsigned int latch : 3;
+		unsigned int adr : 5;
+	} sa;
+};
+
+union d_adr {
+	uint8_t data;
+	struct {
+		unsigned int pio : 1;
+		unsigned int adr : 4;
+		unsigned int type : 1;
+		unsigned int bus : 2;
+	} da;
+};
+
+
 class OwDevices
 {
 	private:
