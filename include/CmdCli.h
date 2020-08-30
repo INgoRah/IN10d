@@ -10,7 +10,10 @@ class CmdCli
 	private:
 		CmdCallback<11> cmdCallback;
 		CmdParser cmdParser;
-		uint8_t atoh(const char *str);
+		/**
+		 * /param prefix check for existing prefix '0x' for hex or dec
+		 * */
+		uint8_t atoh(const char *str, bool prefix = true);
 		void dumpSwTbl(void);
 
 		static void funcBus(CmdParser *myParser);

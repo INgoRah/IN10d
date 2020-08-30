@@ -40,26 +40,34 @@ void OwDevices::loop()
 {
 }
 
-void OwDevices::adrGen(OneWireBase *ds, byte adr[8], uint8_t id)
+void OwDevices::adrGen(OneWireBase *ds, uint8_t bus, uint8_t adr[8], uint8_t id)
 {
-	adr[1] = id;
-	if (adr[2] != 0x48) {
+	int i;
+
+	adr[1] = id; // id selector
+	adr[2] = bus;
+	adr[3] = (uint8_t)~id;
+	adr[4] = (uint8_t)~bus;
+	if (adr[5] != 0x66) {
 		/* set me up */
-		adr[0] = 0x29;
-		adr[2] = 0x48;
-		adr[3] = 0x3;
-		adr[4] = 0x5;
+		adr[0] = 0x29; // type
 		adr[5] = 0x66;
 		adr[6] = 0x77;
 	}
 	adr[7] = ds->crc8 (adr, 7);
+	for (i = 0; i < 7; i++) {
+		Serial.print(adr[i], HEX);
+		Serial.write(' ');
+	}
+	Serial.println(adr[i], HEX);
 }
 
-void OwDevices::search(OneWireBase *ds)
+void OwDevices::search(OneWireBase *ds, byte bus)
 {
 	byte adr[8];
 	byte j = 0;
 
+	ds->selectChannel(bus);
 	Serial.print(F("reset..."));
 	ds->reset_search();
 	if (ds->reset() == 0) {
@@ -67,7 +75,6 @@ void OwDevices::search(OneWireBase *ds)
 		return;
 	} 
 	Serial.println(F("success!"));
-	ds->reset_search();
 
 	while (ds->search(adr)) {
 		Serial.print("#");
@@ -83,13 +90,14 @@ void OwDevices::search(OneWireBase *ds)
 	Serial.println(" sensors found");
 }
 
-uint8_t OwDevices::ds2408RegRead(OneWireBase *ds, uint8_t* addr, uint8_t* data, bool latch_reset)
+uint8_t OwDevices::ds2408RegRead(OneWireBase *ds, byte bus, uint8_t* addr, uint8_t* data, bool latch_reset)
 {
 	uint8_t tmp;
 	uint8_t buf[13];  // Put everything in the buffer so we can compute CRC easily.
 	uint8_t retry;
 
 	/* read latch */
+	ds->selectChannel(bus);
 	ds->reset();
 	ds->select(addr);
 	// read data registers
@@ -117,17 +125,18 @@ uint8_t OwDevices::ds2408RegRead(OneWireBase *ds, uint8_t* addr, uint8_t* data, 
 	return tmp;
 }
 
-void OwDevices::ds2408Status(OneWireBase *ds, byte adr[8], bool latch_reset)
+void OwDevices::ds2408Status(OneWireBase *ds, byte bus, byte adr[8], bool latch_reset)
 {
 	byte data[10], i;
 
-	adrGen (ds, adr, adr[1]);
+	adrGen (ds, bus, adr, adr[1]);
 	Serial.print(adr[1], HEX);
 	Serial.print("..");
 	Serial.print(adr[6], HEX);
 	Serial.print(' ');
 	Serial.println(adr[7], HEX);
-	ds2408RegRead(ds, adr, data, latch_reset);
+	ds->selectChannel(bus);
+	ds2408RegRead(ds, bus, adr, data, latch_reset);
 	Serial.print(F("Data "));
 	for (i = 0; i < 9; i++) {
 		Serial.print(data[i], HEX);
@@ -139,11 +148,12 @@ void OwDevices::ds2408Status(OneWireBase *ds, byte adr[8], bool latch_reset)
 	Serial.println(crc, HEX);
 }
 
-void OwDevices::toggleDs2413(OneWireBase *ds, uint8_t* addr)
+void OwDevices::toggleDs2413(OneWireBase *ds, byte bus, uint8_t* addr)
 {
 	unsigned char pio, pion;
 	int cnt = 10;
 
+	ds->selectChannel(bus);
 	do {
 		ds->reset();
 		ds->select(addr);
@@ -170,11 +180,12 @@ void OwDevices::toggleDs2413(OneWireBase *ds, uint8_t* addr)
 	} while (pio != 0xAA);
 }
 
-uint8_t OwDevices::ds2408TogglePio(OneWireBase *ds, uint8_t* addr, uint8_t pio, uint8_t* data)
+uint8_t OwDevices::ds2408TogglePio(OneWireBase *ds, byte bus, uint8_t* addr, uint8_t pio, uint8_t* data)
 {
 	uint8_t d;
 	uint8_t buf[3];  // Put everything in the buffer so we can compute CRC easily.
 
+	ds->selectChannel(bus);
 	if (data == NULL) {
 		ds->reset();
 		ds->select(addr);
@@ -191,7 +202,7 @@ uint8_t OwDevices::ds2408TogglePio(OneWireBase *ds, uint8_t* addr, uint8_t pio, 
 		Serial.print(d, HEX);
 		Serial.println("..");
 	}
-	
+
 	if (d & pio)
 		d &= ~(pio);
 	else
@@ -216,11 +227,12 @@ uint8_t OwDevices::ds2408TogglePio(OneWireBase *ds, uint8_t* addr, uint8_t pio, 
 	return r;
 }
 
-void OwDevices::ds2408Data(OneWireBase *ds, byte adr[8], uint8_t len)
+void OwDevices::ds2408Data(OneWireBase *ds, byte bus, byte adr[8], uint8_t len)
 {
 	int i;
 
-	adrGen(ds, adr, adr[1]);
+	adrGen(ds, bus, adr, adr[1]);
+	ds->selectChannel(bus);
 	ds->reset();
 	ds->select(adr);
 	// Read data
@@ -233,11 +245,12 @@ void OwDevices::ds2408Data(OneWireBase *ds, byte adr[8], uint8_t len)
 	Serial.println(ds->read (), HEX);
 }
 
-void OwDevices::ds2408Cfg(OneWireBase *ds, byte adr[8], uint8_t* d, uint8_t len)
+void OwDevices::ds2408Cfg(OneWireBase *ds, byte bus, byte adr[8], uint8_t* d, uint8_t len)
 {
 	int i;
 	uint8_t data[24];
 
+	ds->selectChannel(bus);
 	ds->reset();
 	ds->select(adr);
 	ds->write (0x85);
@@ -258,7 +271,9 @@ void OwDevices::ds2408Cfg(OneWireBase *ds, byte adr[8], uint8_t* d, uint8_t len)
 	ds->write (0x75);
 	for (i = 0; i < len; i++)
 		ds->write(data[i]);
-	Serial.print(F("Cfg Data write "));
+	Serial.print(F("Cfg Data write ("));
+	Serial.print(len);
+	Serial.print(") ");
 	for (i = 0; i < 23; i++) {
 		Serial.print(data[i], HEX);
 		Serial.print(F(" "));
@@ -275,7 +290,7 @@ void OwDevices::statusPrint(OneWireBase *ds, byte adr[8])
 	Serial.print(adr[6], HEX);
 	Serial.print(' ');
 	Serial.println(adr[7], HEX);
-	ds2408RegRead(ds, adr, data);
+	ds2408RegRead(ds, 1, adr, data);
 	Serial.print(F("Data "));
 	for (i = 0; i < 7; i++) {
 		Serial.print(data[i], HEX);
@@ -289,21 +304,12 @@ void OwDevices::statusRead(OneWireBase *ds)
 	byte adr[8];
 
 	Serial.println(F("Data read"));
-	adr[0] = 0x29;
-	adr[1] = 0x01;
-	adr[2] = 0x48;
-	adr[3] = 0x3;
-	adr[4] = 0x5;
-	adr[5] = 0x66;
-	adr[6] = 0x77;
+
+	adr[1] = 0x6;
 	adr[7] = ds->crc8 (adr, 7);
 	statusPrint(ds, adr);
 
-	adr[1] = 0x42;
-	adr[7] = ds->crc8 (adr, 7);
-	statusPrint(ds, adr);
-
-	adr[1] = 0x5;
+	adr[1] = 0x3;
 	adr[7] = ds->crc8 (adr, 7);
 	statusPrint(ds, adr);
 #if 0

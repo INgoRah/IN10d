@@ -20,6 +20,7 @@
 #include <DS2482.h>
 #include <OneWire.h>
 #include "WireWatchdog.h"
+#include "TwiHost.h"
 #include "CmdCli.h"
 #include "OwDevices.h"
 
@@ -32,16 +33,15 @@
 					ledOn = 1;
 #define LED_OFF() digitalWrite(13, 0); \
 					ledOn = 0;
-#define MAX_CMD_BUFSIZE 16
+#define MAX_CMD_BUFSIZE 64
 
-const byte ow_pin = 3;
+const byte ow_pin = A0;
 
 #define MAX_BUS 3
 #define MAX_SWITCHES 4 * 12
 
 byte sw_tbl[MAX_BUS][MAX_SWITCHES][2] = { {
 { 0, 0x0 },
-{ 0x82, 0x88 },
 { 0, 0x0 },
 { 0, 0x0 }
 } };
@@ -54,11 +54,12 @@ extern byte mode;
  * Objects
  */
 DS2482 ds1(0);
-OneWire ds2(2);
-OneWire ds3(ow_pin);
-WireWatchdog wdt(ow_pin, 0x2f);
+/*OneWire ds2(2);
+OneWire ds3(ow_pin); */
+WireWatchdog wdt(ow_pin);
+TwiHost host(0x2f);
 OneWireBase *ds = &ds1;
-OneWireBase* bus[3] = { &ds1, &ds2, &ds3 };
+OneWireBase* bus[3] = { &ds1, &ds1, &ds1 };
 CmdCli cli;
 OwDevices ow;
 
@@ -72,11 +73,11 @@ unsigned long wdTime = 0;
 unsigned long timeStamp = 0;
 static unsigned long alarmPolling = 0;
 static int id;
+uint8_t *hostData = NULL;
 
 /*
 * Function declarations
 */
-void ow_monitor();
 bool alarm_handler(byte busNr);
 
 void wdtAlarm() 
@@ -84,9 +85,7 @@ void wdtAlarm()
 	Serial.println(F("Alarm test"));
 }
 
-uint8_t *hostData = NULL;
-
-void wdtCommand(uint8_t cmd, uint8_t data)
+void hostCommand(uint8_t cmd, uint8_t data)
 {
 	uint8_t cnt, adr[8], j;
 	//static uint8_t buf[3 * 8];
@@ -97,7 +96,7 @@ void wdtCommand(uint8_t cmd, uint8_t data)
 	case 0x5A:
 		hostData = (uint8_t*)malloc(MAX_DATA);
 		//hostData = buf;
-		wdt.setStatus(0x01);
+		host.setStatus(0x01);
 		Serial.println("start ... ");
 		id = 0;
 		ds->reset_search();
@@ -119,27 +118,27 @@ void wdtCommand(uint8_t cmd, uint8_t data)
 				}
 				Serial.println();
 			}
-			wdt.setData(hostData, cnt);
-			wdt.setStatus(0x0);
+			host.setData(hostData, cnt);
+			host.setStatus(0x0);
 			Serial.print(j-1);
 			Serial.println(" sensors found");
 		}
 		else
-			wdt.setStatus(0x80);
+			host.setStatus(0x80);
 		break;
 	case 0x5B:
 		free(hostData);
 		/*
-		wdt.setStatus(0x01);
+		host.setStatus(0x01);
 		Serial.print("searching ... ");
 		if (ds->search(&adr[1])) {
-			wdt.setStatus(0);
+			host.setStatus(0);
 			id++;
 			adr[0] = id;
-			wdt.setData(adr, 9);
+			host.setData(adr, 9);
 			Serial.println(id);
 		} else {
-			wdt.setStatus(0x80);
+			host.setStatus(0x80);
 			Serial.println("fail");
 		}
 		*/
@@ -154,29 +153,53 @@ void wdtCommand(uint8_t cmd, uint8_t data)
 	}
 }
 
+void initSwTable()
+{
+	uint16_t len;
+	uint8_t vers;
+
+	vers = eeprom_read_byte((const uint8_t*)0);
+	len = eeprom_read_word((const uint16_t*)2);
+	if (len != 0xFFFF && vers != 0xff) {
+		Serial.print("vers=");
+		Serial.print(vers);
+		Serial.print(" len=");
+		Serial.print(len);
+		Serial.print(" tbl=");
+		Serial.println(sizeof(sw_tbl));
+	}
+	//if (len <= sizeof(sw_tbl))
+		eeprom_read_block((void*)sw_tbl, (const void*)4, len);
+}
+
 void setup() {
 	ADCSRA = 0;	// disable ADC
 	Serial.begin(115200);
 
 	Serial.print(F("One Wire Control..."));
-	digitalWrite(A1, HIGH);
+/*	digitalWrite(A1, HIGH);
 	pinMode(A1, OUTPUT);
 	digitalWrite(A3, LOW);
-	pinMode(A3, OUTPUT);
+	pinMode(A3, OUTPUT); */
 	delay (100);
+	initSwTable();
 	ds->resetDev();
 	ds->configureDev(DS2482_CONFIG_APU); 
 	delay (10);
 	wdt.onAlarm(wdtAlarm);
-	wdt.onCommand(wdtCommand);
+	host.onCommand(hostCommand);
 	wdt.begin();
+	host.begin();
 	wdFired = 0;
 
 	ow.begin();
 	delay (100);
-	::attachInterrupt(digitalPinToInterrupt(ow_pin), ow_monitor, CHANGE);
+	pinMode(ow_pin, INPUT);
+	//::attachInterrupt(digitalPinToInterrupt(ow_pin), ow_monitor, CHANGE);
+  	*digitalPinToPCMSK(ow_pin) |= 0xf;  // enable pins
+    PCIFR  |= bit (digitalPinToPCICRbit(ow_pin)); // clear any outstanding interrupt
+    PCICR  |= bit (digitalPinToPCICRbit(ow_pin)); // enable interrupt for the group	
 	delay (100);
-	digitalWrite(A3, HIGH);
 	wdTime = millis();
 	alarmPolling = millis();
 	Serial.println(F("active"));
@@ -184,31 +207,33 @@ void setup() {
 }
 
 /* interrupt handling for change on 1-wire */
-void ow_monitor()
+ISR (PCINT1_vect) // handle pin change interrupt for A0 to A5 here
 {
 	bool p = wdt.lineRead();
 	unsigned long now = micros();
 
 	if (p) {
 		unsigned long duration = now - owLowStart;
-		digitalWrite(A3, 1);
+		digitalWrite(3, 1);
 		wdTime = millis();
 		if (owLowStart == 0)
 			return;
 		owLowStart = 0;
 		if (duration > 800) {
+			if (alarmSignal == 1)
+				return; 
 			timeStamp = millis();
 			LED_ON();
-
-			ledOnTime = millis();
 			alarmSignal = 1;
+			Serial.write("!");
+			ledOnTime = millis();
 			return;
 		}
 		if (duration > 300) {
 			// reset
 		}
 	} else {
-		digitalWrite(A3, 0);
+		digitalWrite(3, 0);
 		// went down, log (reduce by some overhead)
 		owLowStart = now - 50;
 	}
@@ -230,7 +255,7 @@ void ledBlink()
 
 void loop()
 {
-	wdt.loop();
+	host.loop();
 	if (ledOnTime != 0 && !alarmSignal) {
 		ledBlink();
 	}
@@ -242,7 +267,7 @@ void loop()
 		::attachInterrupt(digitalPinToInterrupt(ow_pin), ow_monitor, CHANGE);
 */
 		wdTime = millis();
-		//Serial.println(F("Alarms signal "));
+		Serial.println(F("Alarms signal "));
  		do {
 			delayMicroseconds (150);
 			p = wdt.lineRead();
@@ -255,15 +280,18 @@ void loop()
 			}
 		} while (!p);
 		// interrupt to host
-		digitalWrite (A1, LOW);
+		digitalWrite (HOST_ALRM_PIN, LOW);
 		wdTime = millis();
 		alarmPolling = millis();
 		if (mode & MODE_ALRAM_HANDLING) {
-			int retry = 10;
-			while (!alarm_handler(alarmSignal-1)) {
-				if (retry-- == 0)
-					break;
-			};
+			int retry;
+			for (int i = 0; i < MAX_BUS; i++) {
+				retry = 10;
+				while (!alarm_handler(i)) {
+					if (retry-- == 0)
+						break;
+				}
+			}
 		}
 		alarmSignal = 0;
 		// ds->reset();
@@ -287,6 +315,89 @@ void loop()
 	sleep_enable();
 	set_sleep_mode(SLEEP_MODE_IDLE);
 	sleep_cpu();
+}
+
+bool switchHandle(uint8_t busNr, uint8_t adr1, uint8_t latch)
+{
+	union s_adr src;
+	union d_adr dst;
+	int retry;
+
+	// busNr should be == addr[2]
+	Serial.print(busNr, HEX);
+	Serial.print(".");
+	src.sa.adr =  adr1;
+	// first two latches are output
+	// needs special handling table
+	src.sa.latch = latch >> 2;
+	// todo: check for only one bit !
+	Serial.print(src.data, HEX);
+	dst.da.bus = busNr;
+	dst.da.type = 0;
+	dst.da.adr = adr1;
+	dst.da.pio = 0;
+	Serial.print(" [");
+	Serial.print(dst.data, HEX);
+	Serial.print("/");
+	dst.da.pio = 1;
+	Serial.print(dst.data, HEX);
+	if (latch < 4) {
+		Serial.println("] Notify");
+		// hmmm...let switch something else also?? shift >> 2 not working!!
+		return true;
+	}
+	Serial.println("]");
+	/*
+	 * Standard handler: from 5 bit adr (1..1f) and 3 bit latch (1..7)
+	 * Get target switch
+	 * Source: <fam> <2 bit store | 6 bit id> <pins> <version> <serial> <random data ... >
+
+	29 A2 D9 84 0 16 04 4C:8 => 29.A2D984001604
+	29 A2 D9 84 0 16 10 B0:1 => 
+	*/
+	for (uint8_t i = 0; i < MAX_SWITCHES; i++) {
+		if (latch > 0x3 && src.data == sw_tbl[busNr][i][0]) {
+			byte adr[8];
+
+			dst.data = sw_tbl[busNr][i][1];
+			Serial.print(F("switch#"));
+			Serial.print(i);
+			Serial.print(" ");
+			Serial.print(src.data, HEX);
+			Serial.print(" -> ");
+			Serial.print(dst.data, HEX);
+			Serial.print(" adr=");
+			Serial.print(dst.da.adr, HEX);
+			Serial.print(" pio=");
+			Serial.println(dst.da.pio + 1, HEX);
+			// type 0:
+			ow.adrGen(ds, dst.da.bus, adr, dst.da.adr);
+			Serial.print(" target=");
+			for (i = 0; i < 7; i++) {
+				Serial.write(' ');
+				Serial.print(adr[i], HEX);
+			}
+			Serial.write(' ');
+			Serial.println(adr[i], HEX);
+#if 0
+	// type 1:
+		static uint8_t target[8] = { 0x3A, 0x01, 0xDA, 0x84, 0x00, 0x00, 0x05, 0xA3 };
+		ow.toggleDs2413 (bus[0], target);
+#endif			
+			retry = 5;
+			do {
+				ds->selectChannel(busNr);
+				latch = ow.ds2408TogglePio(ds, busNr, adr, dst.da.pio + 1, NULL);
+				if (latch == 0xAA) {
+					break;
+				}
+			} while (retry-- > 0);
+			if (latch != 0xAA)
+				return false;
+		}
+	}
+
+	return true;
 }
 
 /*
@@ -318,11 +429,12 @@ bool alarm_handler(byte busNr)
 			return true;
 		}
 		latch = 0;
+		busNr = addr[2];
 		switch (addr[0]) {
 			case 0x29:
 				retry = 5;
 				do {
-					latch = ow.ds2408RegRead(ds, addr, data);
+					latch = ow.ds2408RegRead(ds, busNr, addr, data);
 					if (latch == 0xAA) {
 						latch = data[2];
 						break;
@@ -339,7 +451,7 @@ bool alarm_handler(byte busNr)
 				ds->select(addr);
 				ds->write(0xBE);  // Read Scratchpad
 				// we need 9 bytes
-				for ( i = 0; i < 9; i++)
+				for (i = 0; i < 9; i++)
 			    	latch = ds->read();
 				Serial.println();
 				break;
@@ -347,78 +459,7 @@ bool alarm_handler(byte busNr)
 				break;
 		}
 		if (latch != 0 && latch != 0xff) {
-			union s_adr src;
-			union d_adr dst;
-
-			Serial.print(busNr, HEX);
-			Serial.print(".");
-			src.sa.adr =  addr[1];
-			src.sa.latch = latch >> 2;
-			// check for only one bit !
-			Serial.print(src.data, HEX);
-			dst.da.bus = busNr;
-			dst.da.type = 0;
-			dst.da.adr = addr[1];
-			dst.da.pio = 0;
-			Serial.print(" [");
-			Serial.print(dst.data, HEX);
-			Serial.print("/");
-			dst.da.pio = 1;
-			Serial.print(dst.data, HEX);
-			Serial.println("]");
-			/*
-			Get target switch
-			Source: <fam> <2 bit store | 6 bit id> <pins> <version> <serial> <random data ... >
-
-			29 A2 D9 84 0 16 04 4C:8 => 29.A2D984001604
-			29 A2 D9 84 0 16 10 B0:1 => 
-			*/
-			for (i = 0; i < MAX_SWITCHES; i++) {
-				if (src.data == sw_tbl[busNr][i][0]) {
-					dst.data = sw_tbl[busNr][i][1];
-					Serial.print(F("switch#"));
-					Serial.print(i);
-					Serial.print(" ");
-					Serial.print(src.data, HEX);
-					Serial.print(" -> ");
-					Serial.print(dst.data, HEX);
-					Serial.print(" adr=");
-					Serial.print(dst.da.adr, HEX);
-					Serial.print(" pio=");
-					Serial.println(dst.da.pio + 1, HEX);
-				}
-			}
-#if 0		
-			if ((addr[1] == 0x42) && (latch & 4)) {
-				// temp
-				static uint8_t target[8] = { 0x3A, 0x01, 0xDA, 0x84, 0x00, 0x00, 0x05, 0xA3 };
-				ow.toggleDs2413 (bus[0], target);
-			}
-			if ((addr[1] & 0x3F) == 1 && latch & 0xf) {
-				retry = 5;
-				do {
-					latch = ow.ds2408TogglePio(ds, addr, 1, data);
-					if (latch == 0xAA) {
-						break;
-					}
-				} while (retry-- > 0);
-				if (latch != 0xAA)
-					return false;
-			}
-			if ((addr[1] & 0x3F) == 2 && latch == 0x4) {
-
-			}
-			if (addr[1] == 0x01 && latch & 0xf) {
-				// light switch kitchen
-				//static uint8_t target[8] = { 0x29, 0xA2, 0xD9, 0x84, 0x00, 0x16, 0x04, 0x4C };
-				retry = 5;
-				do {
-					latch = ow.ds2408TogglePio(ds, addr, 1, NULL);
-					if (latch == 0xAA)
-						break;
-				} while (retry-- > 0);
-			}
-#endif			
+			switchHandle(busNr, addr[1], latch);
 		} else {
 			return false;
 		}
