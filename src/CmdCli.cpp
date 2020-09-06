@@ -24,8 +24,8 @@
 
 extern byte mode;
 extern OneWireBase *ds;
-extern OneWireBase* bus[];
-extern WireWatchdog wdt;
+//extern OneWireBase* bus[];
+extern WireWatchdog* wdt[MAX_BUS];
 
 extern bool alarm_handler(byte busNr);
 extern void hostCommand(uint8_t cmd, uint8_t data);
@@ -127,20 +127,23 @@ void CmdCli::funcBus(CmdParser *myParser)
 	
 	if (myParser->getParamCount() > 0) {
 		i = atoi(myParser->getCmdParam(1));
-		ds = bus[i];
+		//ds = bus[i];
 		curBus = i;
 	} else {
 		bool p;
 
-		Serial.print("status=");
+		Serial.print(F("status="));
 		Serial.print(ds->status);
-		Serial.print(", address=");
+		Serial.print(F(", address="));
 		Serial.print(ds->mAddress, HEX);
 		Serial.print(", bus=");
 		Serial.println(curBus);
-		p = wdt.lineRead();
 		Serial.print(F("  ow_pin="));
-		Serial.println(p);
+		for (i = 0; i < MAX_BUS; i++) {
+			p = wdt[i]->lineRead();
+			Serial.print(p);
+		}
+		Serial.println();
 	}
 }
 
@@ -148,9 +151,10 @@ void CmdCli::funcSearch(CmdParser *myParser)
 {
 	int i;
 
-	for (i = 0; i < 2; i++) {
+	for (i = 0; i < 3; i++) {
 		Serial.print("Ch ");
 		Serial.print(i);
+		Serial.print(": ");
 		ow->search(ds, i);
 	}
 }
@@ -261,7 +265,7 @@ void CmdCli::funcPinSet(CmdParser *myParser)
 
 void CmdCli::funcAlarmSrch(CmdParser *myParser)
 {
-	for (int i = 0; i < 2;i++)
+	for (int i = 0; i < MAX_BUS;i++)
 		alarm_handler(i);
 }
 

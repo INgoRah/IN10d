@@ -35,8 +35,6 @@
 					ledOn = 0;
 #define MAX_CMD_BUFSIZE 64
 
-const byte ow_pin = A0;
-
 #define MAX_BUS 3
 #define MAX_SWITCHES 4 * 12
 
@@ -54,12 +52,15 @@ extern byte mode;
  * Objects
  */
 DS2482 ds1(0);
-/*OneWire ds2(2);
-OneWire ds3(ow_pin); */
-WireWatchdog wdt(ow_pin);
+
+WireWatchdog wdt0(A0);
+WireWatchdog wdt1(A1);
+WireWatchdog wdt2(A2);
+WireWatchdog* wdt[MAX_BUS] = { &wdt0, &wdt1, &wdt2 };
+
 TwiHost host(0x2f);
 OneWireBase *ds = &ds1;
-OneWireBase* bus[3] = { &ds1, &ds1, &ds1 };
+//OneWireBase* bus[3] = { &ds1, &ds1, &ds1 };
 CmdCli cli;
 OwDevices ow;
 
@@ -68,9 +69,7 @@ OwDevices ow;
  */
 byte alarmSignal, wdFired, ledOn = 0;
 unsigned long ledOnTime = 0;
-static unsigned long owLowStart = 0;
 unsigned long wdTime = 0;
-unsigned long timeStamp = 0;
 static unsigned long alarmPolling = 0;
 static int id;
 uint8_t *hostData = NULL;
@@ -186,19 +185,16 @@ void setup() {
 	ds->resetDev();
 	ds->configureDev(DS2482_CONFIG_APU); 
 	delay (10);
-	wdt.onAlarm(wdtAlarm);
+	// wdt.onAlarm(wdtAlarm);
 	host.onCommand(hostCommand);
-	wdt.begin();
 	host.begin();
 	wdFired = 0;
 
 	ow.begin();
 	delay (100);
-	pinMode(ow_pin, INPUT);
-	//::attachInterrupt(digitalPinToInterrupt(ow_pin), ow_monitor, CHANGE);
-  	*digitalPinToPCMSK(ow_pin) |= 0xf;  // enable pins
-    PCIFR  |= bit (digitalPinToPCICRbit(ow_pin)); // clear any outstanding interrupt
-    PCICR  |= bit (digitalPinToPCICRbit(ow_pin)); // enable interrupt for the group	
+	PCMSK1 |= (_BV(PCINT8) | _BV(PCINT9) | _BV(PCINT10) | _BV(PCINT11));
+    PCIFR |= _BV(PCIF1); // clear any outstanding interrupt
+    PCICR |= _BV(PCIE1); // enable interrupt for the group	
 	delay (100);
 	wdTime = millis();
 	alarmPolling = millis();
@@ -207,11 +203,21 @@ void setup() {
 }
 
 /* interrupt handling for change on 1-wire */
-ISR (PCINT1_vect) // handle pin change interrupt for A0 to A5 here
+ISR (PCINT1_vect) // handle pin change interrupt for A0 to A4 here
 {
-	bool p = wdt.lineRead();
-	unsigned long now = micros();
+	uint8_t i;
 
+	for (i = 0; i < MAX_BUS; i++) {
+		if (wdt[i]->alarmCheck()) {
+			alarmSignal++;
+			ledOnTime = millis();
+			LED_ON();
+		}
+	}
+	wdTime = millis();
+#if 0
+	unsigned long now = micros();
+	bool p = wdt.lineRead();
 	if (p) {
 		unsigned long duration = now - owLowStart;
 		digitalWrite(3, 1);
@@ -220,11 +226,10 @@ ISR (PCINT1_vect) // handle pin change interrupt for A0 to A5 here
 			return;
 		owLowStart = 0;
 		if (duration > 800) {
-			if (alarmSignal == 1)
+			if (alarmSignal > 0)
 				return; 
-			timeStamp = millis();
 			LED_ON();
-			alarmSignal = 1;
+			alarmSignal++;
 			Serial.write("!");
 			ledOnTime = millis();
 			return;
@@ -237,6 +242,7 @@ ISR (PCINT1_vect) // handle pin change interrupt for A0 to A5 here
 		// went down, log (reduce by some overhead)
 		owLowStart = now - 50;
 	}
+#endif
 }
 
 void ledBlink()
@@ -260,14 +266,10 @@ void loop()
 		ledBlink();
 	}
 	if (alarmSignal) {
-		bool p;
-		int cnt = 1000;
-/*
-		::detachInterrupt(digitalPinToInterrupt(ow_pin));
-		::attachInterrupt(digitalPinToInterrupt(ow_pin), ow_monitor, CHANGE);
-*/
-		wdTime = millis();
 		Serial.println(F("Alarms signal "));
+#if 0
+		// is this needed? Line was high when
+		// alarm is set
  		do {
 			delayMicroseconds (150);
 			p = wdt.lineRead();
@@ -279,6 +281,7 @@ void loop()
 				break;
 			}
 		} while (!p);
+#endif
 		// interrupt to host
 		digitalWrite (HOST_ALRM_PIN, LOW);
 		wdTime = millis();
@@ -286,20 +289,23 @@ void loop()
 		if (mode & MODE_ALRAM_HANDLING) {
 			int retry;
 			for (int i = 0; i < MAX_BUS; i++) {
-				retry = 10;
-				while (!alarm_handler(i)) {
-					if (retry-- == 0)
-						break;
+				if (wdt[i]->alarm) {
+					retry = 5;
+					while (!alarm_handler(i)) {
+						if (retry-- == 0)
+							break;
+					}
+					wdt[i]->alarm = false;
 				}
 			}
 		}
-		alarmSignal = 0;
+		alarmSignal--;
 		// ds->reset();
 	}
 	if (millis() - alarmPolling > 2000) {
 		alarmPolling = millis();
 		if (mode & MODE_ALRAM_POLLING) {
-			for (int i = 0; i < 2;i++)
+			for (int i = 0; i < MAX_BUS;i++)
 				alarm_handler(i);
 		}
 	}
@@ -347,6 +353,18 @@ bool switchHandle(uint8_t busNr, uint8_t adr1, uint8_t latch)
 		return true;
 	}
 	Serial.println("]");
+	/* Timed handler: reset or start timer 
+	 * based on PIR or standard light (bath)
+	 * PIR needs 1 min of initialization, ignore after start
+	 * Single trigger mode for 3 secs
+	bool handled;??
+	for (uint8_t i = 0; i < MAX_SIGNALS; i++) {
+		if (latch > 0 && src.data == sig_tbl[busNr][i][0]) {
+			check polarity and ignore falling edge?
+			High when motion is detected. Check before switching off
+		}
+	}
+	 */
 	/*
 	 * Standard handler: from 5 bit adr (1..1f) and 3 bit latch (1..7)
 	 * Get target switch
@@ -386,8 +404,8 @@ bool switchHandle(uint8_t busNr, uint8_t adr1, uint8_t latch)
 #endif			
 			retry = 5;
 			do {
-				ds->selectChannel(busNr);
-				latch = ow.ds2408TogglePio(ds, busNr, adr, dst.da.pio + 1, NULL);
+				ds->selectChannel(dst.da.bus);
+				latch = ow.ds2408TogglePio(ds, dst.da.bus, adr, dst.da.pio + 1, NULL);
 				if (latch == 0xAA) {
 					break;
 				}
@@ -406,21 +424,23 @@ output may have funcs like timer to switch off
 */
 bool alarm_handler(byte busNr)
 {
-	OneWireBase *ds;
+	//OneWireBase *ds;
 	byte addr[8];
 	byte j = 0;
 	uint8_t i, latch, data[10], retry = 5;
 	uint8_t cnt = 10;
 
-	ds = bus[busNr];
+	//ds = bus[busNr];
+	ds->selectChannel(busNr);
 	ds->reset();
 	ds->reset_search();
 	while (ds->search(addr, false)) {
-		Serial.print("#");
-		Serial.print(j++);
-		Serial.print(":");
+		j++;
+		Serial.print(busNr);
+		Serial.print(F("@"));
 		for (i = 0; i < 8; i++) {
-			Serial.write(' ');
+			if (addr[i] < 0x10)
+				Serial.print(F("0"));
 			Serial.print(addr[i], HEX);
 		}
 		if ((mode & MODE_ALRAM_HANDLING) == 0) {

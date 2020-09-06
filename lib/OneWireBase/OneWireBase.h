@@ -33,7 +33,7 @@ class OneWireBase
 		bool configureDev(uint8_t config) { return true; };
 		void resetDev() {};
 		// DS2482-800 only
-		bool selectChannel(uint8_t channel) { return false; };
+		virtual bool selectChannel(uint8_t channel) { return false; };
 
 		// Write a byte. If 'power' is one then the wire is held high at
 		// the end for parasitically powered devices. You are responsible

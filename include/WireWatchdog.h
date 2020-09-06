@@ -19,9 +19,10 @@
 class WireWatchdog
 {
 	private:
-		static byte owPin;
+		byte owPin;
 		volatile IO_REG_TYPE *reg_;
 		IO_REG_TYPE mask_;
+		unsigned long owLowStart;
 
 		static void (*user_onFired)(void);
 		static void (*user_onAlarm)(void);
@@ -29,6 +30,7 @@ class WireWatchdog
 
 	public:
 		WireWatchdog(byte owPin);
+		bool alarm;
 		void begin();
 		void end();
 		void loop();
@@ -36,6 +38,7 @@ class WireWatchdog
 		void onAlarm( void (*)(void) );
 		void onAlarmClear( void (*)(void) );
 		bool lineRead();
+		bool alarmCheck();
 };
 
 void wdtBegin();

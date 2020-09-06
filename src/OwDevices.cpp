@@ -68,7 +68,6 @@ void OwDevices::search(OneWireBase *ds, byte bus)
 	byte j = 0;
 
 	ds->selectChannel(bus);
-	Serial.print(F("reset..."));
 	ds->reset_search();
 	if (ds->reset() == 0) {
 		Serial.println(F("no devs!"));
@@ -182,7 +181,7 @@ void OwDevices::toggleDs2413(OneWireBase *ds, byte bus, uint8_t* addr)
 
 uint8_t OwDevices::ds2408TogglePio(OneWireBase *ds, byte bus, uint8_t* addr, uint8_t pio, uint8_t* data)
 {
-	uint8_t d;
+	uint8_t d, r, retry;
 	uint8_t buf[3];  // Put everything in the buffer so we can compute CRC easily.
 
 	ds->selectChannel(bus);
@@ -214,7 +213,7 @@ uint8_t OwDevices::ds2408TogglePio(OneWireBase *ds, byte bus, uint8_t* addr, uin
 	ds->write (d);
 	ds->write (0xFF & ~(d));
 	//delayMicroseconds (100);
-	uint8_t r = ds->read();
+	r = ds->read();
 	if (r != 0xAA) {
 		Serial.println(F("data write error"));
 		Serial.print(d, HEX);
@@ -223,6 +222,14 @@ uint8_t OwDevices::ds2408TogglePio(OneWireBase *ds, byte bus, uint8_t* addr, uin
 		Serial.print(' ');
 		Serial.println(r, HEX);
 	}
+	retry = 5;
+	do {
+		ds->reset();
+		ds->select(addr);
+		ds->write (0xC3);
+		if (ds->read() == 0xAA)
+			break;
+	} while (retry-- > 0);
 
 	return r;
 }

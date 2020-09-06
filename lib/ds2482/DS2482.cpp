@@ -114,8 +114,7 @@ bool DS2482::selectChannel(uint8_t channel)
 {
 	const byte R_chan[8] = { 0xB8, 0xB1, 0xAA, 0xA3, 0x9C, 0x95, 0x8E, 0x87 };
 	uint8_t ch;
-// TODO: just a workaround
-	channel = 0;
+
 	switch (channel)
 	{
 		case 0:
@@ -153,7 +152,7 @@ bool DS2482::selectChannel(uint8_t channel)
 	busyWait();
 
 	uint8_t check = _read();
-
+ 
 	return check == R_chan[ch];
 }
 

@@ -10,11 +10,6 @@
 #define DIRECT_READ(base, mask) (((*(base)) & (mask)) ? 1 : 0)
 #endif
 
-extern void ow_monitor();
-extern byte alarmSignal, wdFired, ledOn;
-extern unsigned long ledOnTime;
-extern unsigned long wdTime;
-
 void (*WireWatchdog::user_onFired)(void);
 void (*WireWatchdog::user_onAlarm)(void);
 
@@ -22,6 +17,10 @@ WireWatchdog::WireWatchdog(byte owPin)
 {
 	mask_ = PIN_TO_BITMASK(owPin);
 	reg_ = PIN_TO_BASEREG(owPin);
+	owLowStart = 0;
+	alarm = false;
+	pinMode(owPin, INPUT);
+	this->owPin = owPin;
 }
 
 void WireWatchdog::begin()
@@ -42,7 +41,6 @@ void WireWatchdog::onAlarm( void (*function)(void) )
   user_onAlarm = function;
 }
 
-
 void WireWatchdog::loop()
 {
 }
@@ -50,4 +48,32 @@ void WireWatchdog::loop()
 bool WireWatchdog::lineRead()
 {
 	return DIRECT_READ(reg_, mask_);
+}
+
+bool WireWatchdog::alarmCheck()
+{
+	bool p = DIRECT_READ(reg_, mask_);
+	unsigned long now = micros();
+
+	if (p) {
+		unsigned long duration;
+
+		if (owLowStart == 0)
+			return false;
+		duration = now - owLowStart;
+		owLowStart = 0;
+		if (duration > 800) {
+			//Serial.print(owPin - A0);
+			alarm = true;
+			return true;
+		}
+		if (duration > 300) {
+			// reset
+		}
+	} else {
+		// went down, log (reduce by some overhead)
+		owLowStart = now - 50;
+	}
+
+	return false;
 }
