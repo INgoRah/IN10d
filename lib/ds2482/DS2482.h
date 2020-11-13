@@ -32,7 +32,6 @@
 #define ONEWIRE_CRC 1
 #endif
 
-
 #define DS2482_CONFIG_APU (1<<0)
 #define DS2482_CONFIG_PPM (1<<1)
 #define DS2482_CONFIG_SPU (1<<2)

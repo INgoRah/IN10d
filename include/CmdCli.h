@@ -8,7 +8,7 @@
 class CmdCli
 {
 	private:
-		CmdCallback<11> cmdCallback;
+		CmdCallback<12> cmdCallback;
 		CmdParser cmdParser;
 		/**
 		 * /param prefix check for existing prefix '0x' for hex or dec
@@ -28,6 +28,7 @@ class CmdCli
 		static void funcCfg(CmdParser *myParser);
 		static void funcCmd(CmdParser *myParser);
 		static void funcSwCmd(CmdParser *myParser);
+		static void funcTemp(CmdParser *myParser);
 
 public:
 	CmdCli() {;}

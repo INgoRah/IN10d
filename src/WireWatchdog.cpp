@@ -53,14 +53,14 @@ bool WireWatchdog::lineRead()
 bool WireWatchdog::alarmCheck()
 {
 	bool p = DIRECT_READ(reg_, mask_);
-	unsigned long now = micros();
 
 	if (p) {
 		unsigned long duration;
 
 		if (owLowStart == 0)
 			return false;
-		duration = now - owLowStart;
+
+		duration = micros() - owLowStart;
 		owLowStart = 0;
 		if (duration > 800) {
 			//Serial.print(owPin - A0);
@@ -72,7 +72,7 @@ bool WireWatchdog::alarmCheck()
 		}
 	} else {
 		// went down, log (reduce by some overhead)
-		owLowStart = now - 50;
+		owLowStart = micros() - 15;
 	}
 
 	return false;

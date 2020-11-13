@@ -37,7 +37,7 @@ void TwiHost::begin()
 {
 	cmd = 0xff;
 	rdLen = 0;
-	mode = MODE_ALRAM_HANDLING /* | MODE_ALRAM_POLLING */;
+	mode = MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH;
 	Wire.begin(slaveAdr);
 	Wire.onReceive(receiveEvent);
 	Wire.onRequest(requestEvent);
@@ -91,7 +91,6 @@ void TwiHost::receiveEvent(int howMany) {
 	switch (d)
 	{
 	case DS2482_CMD_RESET:
-		//::attachInterrupt(digitalPinToInterrupt(owPin), ow_monitor, CHANGE);
 		break;
 	case DS2482_CMD_CHANNEL_SELECT:
 		reg = DS2482_CHANNEL_SELECTION_REGISTER;

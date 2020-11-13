@@ -30,7 +30,7 @@ class OneWireBase
 		// with a presence pulse.  Returns 0 if there is no device or the
 		// bus is shorted or otherwise held low for more than 250uS
 		virtual bool reset(void);
-		bool configureDev(uint8_t config) { return true; };
+		virtual bool configureDev(uint8_t config) { return true; };
 		void resetDev() {};
 		// DS2482-800 only
 		virtual bool selectChannel(uint8_t channel) { return false; };
