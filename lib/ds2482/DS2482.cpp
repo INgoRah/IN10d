@@ -152,7 +152,7 @@ bool DS2482::selectChannel(uint8_t channel)
 	busyWait();
 
 	uint8_t check = _read();
-
+ 
 	return check == R_chan[ch];
 }
 

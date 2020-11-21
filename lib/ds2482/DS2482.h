@@ -32,7 +32,6 @@
 #define ONEWIRE_CRC 1
 #endif
 
-
 #define DS2482_CONFIG_APU (1<<0)
 #define DS2482_CONFIG_PPM (1<<1)
 #define DS2482_CONFIG_SPU (1<<2)
@@ -56,10 +55,8 @@ public:
 	bool configureDev(uint8_t config);
 	void resetDev();
 	
-	//DS2482-800 only
-	bool selectChannel(uint8_t channel);
-	
 	bool reset(); // return true if presence pulse is detected
+	bool selectChannel(uint8_t channel);
 	uint8_t wireReadStatus(bool setPtr=false);
 	
 	uint8_t write(uint8_t b, uint8_t power = 0 );
