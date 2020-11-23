@@ -394,19 +394,22 @@ void CmdCli::funcCmd(CmdParser *myParser)
 	hostCommand (cmd, data);
 }
 
-extern byte sw_tbl[MAX_BUS][MAX_SWITCHES][2];
+extern struct _sw_tbl1 sw_tbl1[MAX_BUS][MAX_SWITCHES];
+extern struct _sw_tbl sw_tbl[MAX_BUS * MAX_SWITCHES];
 
 void CmdCli::dumpSwTbl(void) 
 {
-	byte j, i;
-	union s_adr src;
+	byte i;
 	union d_adr dst;
 	int size = 0;
+#if 0
+	byte j;
+	union s_adr src;
 
 	for (j = 0; j < MAX_BUS; j++) {
 		for (i = 0; i < MAX_SWITCHES; i++) {
-			src.data = sw_tbl[j][i][0];
-			dst.data = sw_tbl[j][i][1];
+			src.data = sw_tbl[j][i].src.data;
+			dst.data = sw_tbl[j][i].dst.data;
 			if (src.data == 0)
 				continue;
 			if (src.data == 0xff && dst.data == 0xff)
@@ -425,6 +428,36 @@ void CmdCli::dumpSwTbl(void)
 			Serial.println(dst.da.pio);
 		}
 	}
+#else
+	union s_adr src;
+
+	for (i = 0; i < (MAX_BUS * MAX_SWITCHES); i++) {
+		src.data = sw_tbl[i].src.data;
+		dst.data = sw_tbl[i].dst.data;
+		if (src.data == 0)
+			continue;
+		if (src.data == 0xffff && dst.data == 0xff)
+			continue;
+		size += sizeof(struct _sw_tbl);
+		src.sa.res = 0;
+		Serial.print(src.sa.bus);
+		Serial.print(".");
+		Serial.print(src.sa.adr);
+		Serial.print(".");
+		Serial.print(src.sa.press * 10 + src.sa.latch);
+		Serial.print(" -> ");
+		Serial.print(dst.da.bus);
+		Serial.print(".");
+		Serial.print(dst.da.adr);
+		Serial.print(".");
+		Serial.print(dst.da.pio);
+		Serial.print(" (");
+		Serial.print(src.data, HEX);
+		Serial.print(" | ");
+		Serial.print(dst.data, HEX);
+		Serial.println(")");
+	}
+#endif	
 	Serial.print("Size=");
 	Serial.print(size);
 	Serial.print("/");
@@ -436,7 +469,7 @@ extern void initSwTable();
 
 void CmdCli::funcSwCmd(CmdParser *myParser)
 {
-	byte bus, i;
+	byte i;
 	union s_adr src;
 	union d_adr dst;
 	char *c;
@@ -462,11 +495,11 @@ void CmdCli::funcSwCmd(CmdParser *myParser)
 				break;
 			}
 			case 2:		// write eeprom
-				vers = 1;
+				vers = 2;
 				me->dumpSwTbl();
 				eeprom_write_byte((uint8_t*)0, vers);
 				eeprom_write_word((uint16_t*)2, sw_tbl_len);
-				eeprom_write_block((const void*)sw_tbl, (void*)4, sizeof(sw_tbl));
+				eeprom_write_block((const void*)sw_tbl, (void*)4, sw_tbl_len);
 				Serial.print(F("EEPROM saved ("));
 				Serial.print(sizeof(sw_tbl));
 				Serial.println(F(" bytes)"));
@@ -478,31 +511,56 @@ void CmdCli::funcSwCmd(CmdParser *myParser)
 		}
 		// cmd like store to eeprom
 	}
-	if (myParser->getParamCount() == 3) {
-		bus = atoi(myParser->getCmdParam(1));
+	src.data = 0;
+	dst.data = 0;
+	if (myParser->getParamCount() == 3 || myParser->getParamCount() > 5 ) {
+		uint8_t latch;
+
+		src.sa.bus = atoi(myParser->getCmdParam(1));
 		src.sa.adr = atoi(myParser->getCmdParam(2)); 
-		src.sa.latch = atoi(myParser->getCmdParam(3));
-		for (i = 0; i < MAX_SWITCHES; i++) {
-			if (sw_tbl[bus][i][0] == src.data) {
-				sw_tbl[bus][i][0] = 0;
-				sw_tbl[bus][i][1] = 0xff;
+		latch = atoi(myParser->getCmdParam(3));
+		if (latch - 30 > 0) {
+			/* pressing */
+			src.sa.press = 2;
+			src.sa.latch = latch - 30;
+		} else if (latch - 20 > 0) {
+			/* press long */
+			src.sa.press = 1;
+			src.sa.latch = latch - 20;
+		} else {
+			src.sa.latch = latch;
+			src.sa.press = 0;
+		}
+		Serial.print(src.sa.bus, HEX);
+		Serial.print(".");
+		Serial.print(src.sa.adr, HEX);
+		Serial.print(".");
+		Serial.print(src.sa.latch, HEX);
+		Serial.print(" ");
+		Serial.print(src.sa.press, HEX);
+		Serial.print(" | ");
+		Serial.print(src.data, HEX);
+	}
+	if (myParser->getParamCount() == 3) {
+		for (i = 0; i < (MAX_BUS * MAX_SWITCHES); i++) {
+			if (sw_tbl[i].src.data == src.data) {
+				/* move following or last to here */
+				sw_tbl[i].src.data = 0;
+				sw_tbl[i].dst.data = 0xff;
 				break;
 			}
 		}
 	}
 	if (myParser->getParamCount() > 5) {
-		bus = atoi(myParser->getCmdParam(1));
-		src.sa.adr = atoi(myParser->getCmdParam(2)); 
-		src.sa.latch = atoi(myParser->getCmdParam(3));
 		dst.da.bus = atoi(myParser->getCmdParam(4));
 		dst.da.adr = atoi(myParser->getCmdParam(5));
 		dst.da.pio = atoi(myParser->getCmdParam(6));
 		if (myParser->getParamCount() > 6)
 			dst.da.type = atoi(myParser->getCmdParam(7));
-		for (i = 0; i < MAX_SWITCHES; i++) {
-			if (sw_tbl[bus][i][0] == 0 || sw_tbl[bus][i][0] == src.data) {
-				sw_tbl[bus][i][0] = src.data;
-				sw_tbl[bus][i][1] = dst.data;
+		for (i = 0; i < (MAX_BUS * MAX_SWITCHES); i++) {
+			if (sw_tbl[i].src.data == 0 || sw_tbl[i].src.data == src.data) {
+				sw_tbl[i].src.data = src.data;
+				sw_tbl[i].dst.data = dst.data;
 				break;
 			}
 		}

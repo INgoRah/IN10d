@@ -37,8 +37,11 @@
 					ledOn = 0;
 #define MAX_CMD_BUFSIZE 64
 
-byte sw_tbl[MAX_BUS][MAX_SWITCHES][2] = { {
-} };
+struct _sw_tbl1 sw_tbl1[MAX_BUS][MAX_SWITCHES];
+
+struct _sw_tbl sw_tbl[MAX_BUS * MAX_SWITCHES];
+
+struct _sw_tbl time_tbl[MAX_TIMER];
 
 extern byte mode;
 
@@ -169,7 +172,7 @@ void hostCommand(uint8_t cmd, uint8_t data)
 		while (!Wire.available());
 		dst.da.type = Wire.read();
 		while (!Wire.available());
-		bus = Wire.read(); 
+		src.sa.bus = Wire.read(); 
 		while (!Wire.available());
 		src.sa.adr = Wire.read(); 
 		while (!Wire.available());
@@ -180,10 +183,10 @@ void hostCommand(uint8_t cmd, uint8_t data)
 		dst.da.adr = Wire.read();
 		while (!Wire.available());
 		dst.da.pio = Wire.read();
-		for (i = 0; i < MAX_SWITCHES; i++) {
-			if (sw_tbl[bus][i][0] == 0 || sw_tbl[bus][i][0] == src.data) {
-				sw_tbl[bus][i][0] = src.data;
-				sw_tbl[bus][i][1] = dst.data;
+		for (i = 0; i < (MAX_BUS * MAX_SWITCHES); i++) {
+			if (sw_tbl[i].src.data == 0 || sw_tbl[i].src.data == src.data) {
+				sw_tbl[i].src.data = src.data;
+				sw_tbl[i].dst.data = dst.data;
 				break;
 			}
 		}
@@ -209,26 +212,70 @@ void hostCommand(uint8_t cmd, uint8_t data)
 	}
 }
 
+int convertSwTbl1to2()
+{
+	byte j, i;
+	union s_adr src;
+	union s_adr1 src1;
+	union d_adr dst;
+	int size = 0, cnt = 0;
+
+	for (j = 0; j < MAX_BUS; j++) {
+		for (i = 0; i < MAX_SWITCHES; i++) {
+			src1.data = sw_tbl1[j][i].src.data;
+			dst.data = sw_tbl1[j][i].dst.data;
+			if (src1.data == 0)
+				continue;
+			if (src1.data == 0xff && dst.data == 0xff)
+				continue;
+			size += sizeof(union s_adr) + sizeof(union d_adr);
+			src.data = 0;
+			src.sa.bus = j;
+			/* old format didn't support long press */
+			src.sa.press = 0;
+			src.sa.adr = src1.sa.adr;
+			src.sa.latch = src1.sa.latch;
+			sw_tbl[cnt].src.data = src.data;
+			sw_tbl[cnt].dst.data = dst.data;
+			cnt++;
+		}
+	}
+
+	return size;
+}
+
 void initSwTable()
 {
-	uint16_t len, off;
+	uint16_t len, pos;
 	uint8_t vers;
 
 	vers = eeprom_read_byte((const uint8_t*)0);
 	len = eeprom_read_word((const uint16_t*)2);
+	pos = 4;
 	if (len != 0xFFFF && vers != 0xff) {
 		Serial.print("vers=");
 		Serial.print(vers);
 		Serial.print(" len=");
 		Serial.print(len);
-		Serial.print(" tbl=");
-		Serial.println(sizeof(sw_tbl));
+		switch (vers) {
+			case 1:
+				Serial.print(" tbl=");
+				Serial.println(sizeof(sw_tbl));
+				len = sizeof(sw_tbl1);
+				eeprom_read_block((void*)sw_tbl1, (const void*)pos, len);
+				len = convertSwTbl1to2();
+				Serial.print(" sw_tbl2 len=");
+				Serial.println(len);
+				break;
+			case 2:
+				eeprom_read_block((void*)sw_tbl, (const void*)pos, len);
+				break;
+		}
 	}
-	len = sizeof(sw_tbl);
-	eeprom_read_block((void*)sw_tbl, (const void*)4, len);
-	off = 4 + len;
-	vers = eeprom_read_byte((const uint8_t*)off);
-	len = eeprom_read_word((const uint16_t*)off + 2);
+	pos += len;
+	vers = eeprom_read_byte((const uint8_t*)pos);
+	len = eeprom_read_word((const uint16_t*)pos + 2);
+	pos += 4;
 	if (len != 0xFFFF && vers != 0xff) {
 		Serial.print("special vers=");
 		Serial.print(vers);
@@ -415,26 +462,49 @@ uint8_t bitnumber(uint8_t bitmap)
 	return 0xff;
 }
 
-bool switchHandle(uint8_t busNr, uint8_t adr1, uint8_t latch)
+bool switchHandle(uint8_t busNr, uint8_t adr1, uint8_t latch, uint8_t press)
 {
 	union s_adr src;
 	union d_adr dst;
 	int retry;
 
 	// busNr should be == addr[2]
-	Serial.print(busNr, HEX);
+
+	src.data = 0;
+	src.sa.bus = busNr;
+	src.sa.adr =  adr1 & 0x3f;
+	Serial.print(src.sa.bus, HEX);
 	Serial.print(".");
-	Serial.print(adr1, HEX);
+	Serial.print(src.sa.adr, HEX);
 	Serial.print(".");
-	src.sa.adr =  adr1;
 	/* first two latches are usually output
 	 * signaled from auto switch. The corresponding latch
 	 * is not signaled!
 	 * */
 	src.sa.latch = bitnumber(latch);
-	Serial.println(src.sa.latch, HEX);
+	Serial.print(src.sa.latch, HEX);
+	if (press == 0) {
+		src.sa.press = 2;
+		Serial.println(F(" pressing"));
+		// find free timer and start it
+		// tmr.src = src...
+		tmr[0] = millis();
+		lvl_tbl[0].level = 0;
+		lvl_tbl[0].dst.da.bus = 2;
+		lvl_tbl[0].dst.da.adr = 3;
+	} else if (press > (500 / 32)) {
+		src.sa.press = 1;
+		Serial.print(F(" time="));
+		Serial.println(press * 8);
+		tmr[0] = 0;
+	} else {
+		src.sa.press = 0;
+		Serial.println();
+	}
+	Serial.println(src.data, HEX);
+
 	// put into fifo
-	events.push(busNr << 8 | src.data);
+	events.push(src.data);
 	// todo: signal alarm only here once the data is available
 	if ((mode & MODE_AUTO_SWITCH) == 0)
 		return false;
@@ -454,22 +524,22 @@ bool switchHandle(uint8_t busNr, uint8_t adr1, uint8_t latch)
 	 * Standard handler: from 5 bit adr (1..1f) and 3 bit latch (0..7)
 	 * Get target switch
 	 */
-	for (uint8_t i = 0; i < MAX_SWITCHES; i++) {
-		if (src.data == sw_tbl[busNr][i][0]) {
+	for (uint8_t i = 0; i < (MAX_BUS * MAX_SWITCHES); i++) {
+		if (src.data == sw_tbl[i].src.data) {
 			byte adr[8];
 
-			dst.data = sw_tbl[busNr][i][1];
-			Serial.print(F("switch #"));
-			Serial.println(i);
+			dst.data = sw_tbl[i].dst.data;
 #ifdef DEBUG
+			Serial.print(F("switch #"));
+			Serial.print(i);
 			Serial.print(" ");
 			Serial.print(src.data, HEX);
 			Serial.print(" -> ");
-			Serial.print(dst.data, HEX);
-			Serial.print(" adr=");
-			Serial.print(dst.da.adr, HEX);
-			Serial.print(" pio=");
-			Serial.println(dst.da.pio + 1, HEX);
+			Serial.print(dst.da.bus);
+			Serial.print(".");
+			Serial.print(dst.da.adr);
+			Serial.print(".");
+			Serial.println(dst.da.pio + 1);
 #endif
 			// type 0:
 			ow.adrGen(ds, dst.da.bus, adr, dst.da.adr);
@@ -545,11 +615,13 @@ bool alarm_handler(byte busNr)
 						break;
 					}
 				} while (retry-- > 0);
+#ifdef DEBUG				
 				Serial.print(" (");
 				Serial.print(data[1], HEX);
 				Serial.print(" ");
 				Serial.print(data[2], HEX);
 				Serial.print(") | ");
+#endif				
 				break;
 			case 0x28:
 				ow.tempRead(ds, busNr, addr);
@@ -558,7 +630,7 @@ bool alarm_handler(byte busNr)
 				break;
 		}
 		if (latch != 0 && latch != 0xff) {
-			switchHandle(busNr, addr[1], latch);
+			switchHandle(busNr, addr[1], latch, data[6]);
 		} else {
 			return false;
 		}

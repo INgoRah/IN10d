@@ -9,14 +9,35 @@
 #define MAX_CFG_SIZE 26
 
 union s_adr {
-	uint8_t data;
+	uint16_t data;
 	struct {
+		unsigned int res : 1;
 		// pio/latch number 0..7 
-		unsigned int latch : 3;
-		unsigned int adr : 5;
+		unsigned int bus : 3;  /* 1..7 */
+		/** Press time
+		 * 0: short press
+		 * 2: button pushed (for long press detection)
+		 * 1: long press released */
+		unsigned int press : 2;
+		/** Latch number (only one)
+		 * 0: invalid
+		 * 1..7: valid
+		 * */
+		unsigned int latch : 4; /* 1..15 */
+		unsigned int adr : 6; /* 1..3F (65) */
 	} sa;
 };
 
+union s_adr1 {
+	uint8_t data;
+	struct {
+		// pio/latch number 0..7 
+		unsigned int latch : 3; /* 1..7 */
+		unsigned int adr : 5; /* 1..1F (31) */
+	} sa;
+};
+
+// todo: add force on? or based on src like PIR?
 union d_adr {
 	uint8_t data;
 	struct {
@@ -27,6 +48,15 @@ union d_adr {
 	} da;
 };
 
+struct _sw_tbl {
+	union s_adr src;
+	union d_adr dst;
+};
+
+struct _sw_tbl1 {
+	union s_adr1 src;
+	union d_adr dst;
+};
 
 class OwDevices
 {
