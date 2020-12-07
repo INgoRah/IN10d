@@ -4,12 +4,7 @@
 /*
  * Includes
  */
-#if ARDUINO >= 100
 #include "Arduino.h"			 // for delayMicroseconds, digitalPinToBitMask, etc
-#else
-#include "WProgram.h"			// for delayMicroseconds
-#include "pins_arduino.h"	// for digitalPinToBitMask, etc
-#endif
 #include <avr/pgmspace.h>
 #include "DS2482.h"
 #include "OwDevices.h"
@@ -77,7 +72,7 @@ void OwDevices::adrGen(OneWireBase *ds, uint8_t bus, uint8_t adr[8], uint8_t id)
 #endif
 }
 
-void OwDevices::search(OneWireBase *ds, byte bus)
+int OwDevices::search(OneWireBase *ds, byte bus)
 {
 	byte adr[8];
 	byte j = 0;
@@ -85,23 +80,22 @@ void OwDevices::search(OneWireBase *ds, byte bus)
 	ds->selectChannel(bus);
 	ds->reset_search();
 	if (ds->reset() == 0) {
-		Serial.println(F("no devs!"));
-		return;
+		return -1;
 	} 
 	Serial.println(F("success!"));
 
 	while (ds->search(adr)) {
-		Serial.print("#");
+		Serial.print(F("#"));
 		Serial.print(j++);
-		Serial.print(":");
+		Serial.print(F(":"));
 		for (int i = 0; i < 8; i++) {
 			Serial.write(' ');
 			Serial.print(adr[i], HEX);
 		}
 		Serial.println();
 	}
-	Serial.print(j);
-	Serial.println(" sensors found");
+
+	return j;
 }
 
 /* requires bus selected already before */
@@ -110,6 +104,9 @@ uint8_t OwDevices::ds2408LatchReset(OneWireBase *ds, uint8_t* addr)
 	uint8_t retry;
 	uint8_t tmp;
 
+#if defined(AVRSIM)
+	return 0xAA;
+#endif
 	retry = 5;
 	do {
 		ds->reset();
@@ -126,8 +123,12 @@ uint8_t OwDevices::ds2408LatchReset(OneWireBase *ds, uint8_t* addr)
 uint8_t OwDevices::ds2408RegRead(OneWireBase *ds, byte bus, uint8_t* addr, uint8_t* data, bool latch_reset)
 {
 	uint8_t tmp;
-	uint8_t buf[13];  // Put everything in the buffer so we can compute CRC easily.
+	uint8_t buf[3];  // Put everything in the buffer so we can compute CRC easily.
 
+#if defined(AVRSIM)
+	data[1] = 0x55;
+	return 0xAA;
+#endif
 	/* read latch */
 	ds->selectChannel(bus);
 	ds->reset();
@@ -207,8 +208,32 @@ void OwDevices::toggleDs2413(OneWireBase *ds, byte bus, uint8_t* addr)
 	} while (pio != 0xAA);
 }
 
+uint8_t OwDevices::ds2408PioRead(OneWireBase *ds, byte bus, uint8_t* addr)
+{
+	uint8_t pio;
+	uint8_t buf[3];
+
+#if defined(AVRSIM)
+	return 0x56;
+#endif
+	ds->selectChannel(bus);
+	ds->reset();
+	ds->select(addr);
+	// read data registers
+	buf[0] = 0xF0;    // Read PIO Registers
+	buf[1] = 0x89;    // LSB address
+	buf[2] = 0x00;    // MSB address
+	ds->write (buf, 3);
+	pio = ds->read();
+
+	return pio;
+}
+
 uint8_t OwDevices::ds2408PioSet(OneWireBase *ds, byte bus, uint8_t* addr, uint8_t pio)
 {
+#if defined(AVRSIM)
+	return 0xAA;
+#else
 	uint8_t r;
 
 	ds->selectChannel(bus);
@@ -223,54 +248,25 @@ uint8_t OwDevices::ds2408PioSet(OneWireBase *ds, byte bus, uint8_t* addr, uint8_
 	ds2408LatchReset(ds, addr);
 
 	return r;
+#endif
 }
 
 uint8_t OwDevices::ds2408TogglePio(OneWireBase *ds, byte bus, uint8_t* addr, uint8_t pio, uint8_t* data)
 {
-	uint8_t d, r;
-	uint8_t buf[3];  // Put everything in the buffer so we can compute CRC easily.
+	uint8_t d;
 
-	ds->selectChannel(bus);
-	if (data == NULL) {
-		ds->reset();
-		ds->select(addr);
-		// read data registers
-		buf[0] = 0xF0;    // Read PIO Registers
-		buf[1] = 0x89;    // LSB address
-		buf[2] = 0x00;    // MSB address
-		ds->write (buf, 3);
-		//delayMicroseconds (100);
-		d = ds->read();
-	} else {
+	if (data == NULL)
+		d = ds2408PioRead(ds, bus, addr);
+	else
 		d = data[1];
-		/*Serial.print("change from ");
-		Serial.print(d, HEX);
-		Serial.println("..");*/
-	}
-
 	if (d & pio)
 		d &= ~(pio);
 	else
 		d |= pio;
 
-	ds->reset();
-	ds->select(addr);
-	ds->write (0x5A);
-	ds->write (d);
-	ds->write (0xFF & ~(d));
-	delayMicroseconds (100);
-	r = ds->read();
-	if (r != 0xAA) {
-		Serial.println(F("data write error"));
-		Serial.print(d, HEX);
-		Serial.print(' ');
-		Serial.print(0xFF & ~(d), HEX);
-		Serial.print(' ');
-		Serial.println(r, HEX);
-	}
-	ds2408LatchReset(ds, addr);
+	d = ds2408PioSet(ds, bus, addr, d);
 
-	return r;
+	return d;
 }
 
 void OwDevices::ds2408Data(OneWireBase *ds, byte bus, byte adr[8], uint8_t len)

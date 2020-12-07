@@ -15,8 +15,8 @@
 #include <OneWire.h>
 #include <OwDevices.h>
 #include "WireWatchdog.h"
+#include "SwitchHandler.h"  
 
-#define DEBUG
 /*
  * Local constants
  */
@@ -24,11 +24,14 @@
 #define MAX_CMD_BUFSIZE 80
 
 extern byte mode;
+extern byte debug;
 extern OneWireBase *ds;
 //extern OneWireBase* bus[];
 extern WireWatchdog* wdt[MAX_BUS];
+extern SwitchHandler swHdl;
+extern struct _sw_tbl sw_tbl[MAX_SWITCHES];
+extern struct _sw_tbl timed_tbl[MAX_TIMED_SWITCH];
 
-extern bool alarm_handler(byte busNr);
 extern void hostCommand(uint8_t cmd, uint8_t data);
 
 CmdCli* me;
@@ -87,16 +90,17 @@ void CmdCli::begin(OwDevices* devs)
 	curBus = 0;
 	cmdCallback.addCmd("srch", &funcSearch);
 	cmdCallback.addCmd("pset", &funcPinSet);
+	cmdCallback.addCmd("pget", &funcPinGet);
 	cmdCallback.addCmd("stat", &funcStatus);
 	cmdCallback.addCmd("mode", &funcMode);
 	cmdCallback.addCmd("pio", &funcPio);
 	cmdCallback.addCmd("data", &funcData);
 	cmdCallback.addCmd("bus", &funcBus);
-	cmdCallback.addCmd("alarm", &funcAlarmSrch);
 	cmdCallback.addCmd("cfg", &funcCfg);
 	cmdCallback.addCmd("cmd", &funcCmd);
 	cmdCallback.addCmd("sw", &funcSwCmd);
 	cmdCallback.addCmd("temp", &funcTemp);
+	cmdCallback.addCmd("time", &funcTime);
 
 	//cmdCallback.addCmd("test", &funcTest);
 	// reserve bytes for the inputString
@@ -139,7 +143,7 @@ void CmdCli::funcBus(CmdParser *myParser)
 		Serial.print(ds->status);
 		Serial.print(F(", address="));
 		Serial.print(ds->mAddress, HEX);
-		Serial.print(", bus=");
+		Serial.print(F(", bus="));
 		Serial.println(curBus);
 		Serial.print(F("  ow_pin="));
 		for (i = 0; i < MAX_BUS; i++) {
@@ -152,13 +156,20 @@ void CmdCli::funcBus(CmdParser *myParser)
 
 void CmdCli::funcSearch(CmdParser *myParser)
 {
-	int i;
+	int i, res;
 
 	for (i = 0; i < 4; i++) {
-		Serial.print("Ch ");
+		Serial.print(F("Ch "));
 		Serial.print(i);
-		Serial.print(": ");
-		ow->search(ds, i);
+		Serial.print(F(": "));
+		res = ow->search(ds, i);
+		if (res > 0) {
+			Serial.print(res);
+			Serial.println(F(" sensors found"));
+		} else {
+			Serial.println(F("no devs!"));
+		}
+
 	}
 }
 
@@ -169,6 +180,7 @@ void CmdCli::funcStatus(CmdParser *myParser)
 
 	if (myParser->getParamCount() > 0) {
 		byte adr[8];
+
 		adr[1] = atoi(myParser->getCmdParam(1));
 		if (myParser->getParamCount() > 1)
 			res = atoi(myParser->getCmdParam(2));
@@ -191,10 +203,17 @@ void CmdCli::funcPio(CmdParser *myParser)
 {
 	uint8_t pio, i, level;
 	byte adr[8], data[10];
+	union d_adr dst;
 
 	// channel first
 	adr[1] = me->atoh(myParser->getCmdParam(1), false);
 	pio = atoi(myParser->getCmdParam(2));
+	dst.da.bus = curBus;	
+	dst.da.adr = adr[1];
+	dst.da.pio = pio;
+	dst.da.type = 0;
+	Serial.print(F("target="));
+	Serial.println(dst.data, HEX);
 	switch (adr[1]) {
 		case 10:
 			static uint8_t target[8] = { 0x3A, 0x01, 0xDA, 0x84, 0x00, 0x00, 0x05, 0xA3 };
@@ -212,11 +231,20 @@ void CmdCli::funcPio(CmdParser *myParser)
 				level = atoi(myParser->getCmdParam(3));
 				Serial.print(F("Level: "));
 				Serial.println(level);
+				if (pio == 1)
+					level = ((level & 0xf) << 4) | pio;
+				else
+					level = 0;
 				ow->ds2408PioSet(ds, curBus, adr, level);
 
 			} else
-				ow->ds2408TogglePio(ds, curBus, adr, pio, data);
-			//ow->ds2408Status (ds, curBus, adr, true);
+				ow->ds2408TogglePio(ds, curBus, adr, 1 << pio, data);
+			ow->ds2408RegRead(ds, curBus, adr, data, true);
+			for (i = 0; i < 9; i++) {
+				Serial.print(data[i], HEX);
+				Serial.print(F(" "));
+			}
+			Serial.println(data[i], HEX);
 	}
 }
 
@@ -286,29 +314,16 @@ void CmdCli::funcData(CmdParser *myParser)
 	ow->ds2408Data(ds, curBus, adr, len);
 }
 
-void CmdCli::funcTest(CmdParser *myParser)
-{
-#if 0
-	if (myParser->getParamCount() > 0) {
-		uint8_t slot, w1l, w0l, rc, msr; 
-
-		slot = atoi(myParser->getCmdParam(1));
-		w0l = atoi(myParser->getCmdParam(3));
-		w1l = atoi(myParser->getCmdParam(2));
-		msr = atoi(myParser->getCmdParam(4));
-		rc = atoi(myParser->getCmdParam(5));
-		test_detect (ds, slot, w1l, w0l, msr, rc);
-	} else
-		ow_line_check(ds);
-#endif
-}
-
 void CmdCli::funcMode(CmdParser *myParser)
 {
 	if (myParser->getParamCount() > 0)
 		mode = atoi(myParser->getCmdParam(1));
 	Serial.print(F(" mode="));
 	Serial.print(mode);
+	if (myParser->getParamCount() > 1)
+		debug = atoi(myParser->getCmdParam(2));
+	Serial.print(F(" debug="));
+	Serial.print(debug);
 }
 
 void CmdCli::funcPinSet(CmdParser *myParser)
@@ -326,10 +341,17 @@ void CmdCli::funcPinSet(CmdParser *myParser)
 	digitalWrite (pin, val);
 }
 
-void CmdCli::funcAlarmSrch(CmdParser *myParser)
+void CmdCli::funcPinGet(CmdParser *myParser)
 {
-	for (int i = 0; i < MAX_BUS;i++)
-		alarm_handler(i);
+	uint8_t pin, val;
+
+	Serial.print(F("pget: "));
+	pin = atoi(myParser->getCmdParam(1));
+	Serial.print(F(" pin: "));
+	Serial.print(pin);
+	val = digitalRead(pin);
+	Serial.print(F(" val: "));
+	Serial.print(val);
 }
 
 void CmdCli::funcCfg(CmdParser *myParser)
@@ -394,44 +416,15 @@ void CmdCli::funcCmd(CmdParser *myParser)
 	hostCommand (cmd, data);
 }
 
-extern struct _sw_tbl1 sw_tbl1[MAX_BUS][MAX_SWITCHES];
-extern struct _sw_tbl sw_tbl[MAX_BUS * MAX_SWITCHES];
-
 void CmdCli::dumpSwTbl(void) 
 {
 	byte i;
 	union d_adr dst;
 	int size = 0;
-#if 0
-	byte j;
 	union s_adr src;
 
-	for (j = 0; j < MAX_BUS; j++) {
-		for (i = 0; i < MAX_SWITCHES; i++) {
-			src.data = sw_tbl[j][i].src.data;
-			dst.data = sw_tbl[j][i].dst.data;
-			if (src.data == 0)
-				continue;
-			if (src.data == 0xff && dst.data == 0xff)
-				continue;
-			size += 2;
-			Serial.print(j);
-			Serial.print(".");
-			Serial.print(src.sa.adr);
-			Serial.print(".");
-			Serial.print(src.sa.latch);
-			Serial.print(" -> ");
-			Serial.print(dst.da.bus);
-			Serial.print(".");
-			Serial.print(dst.da.adr);
-			Serial.print(".");
-			Serial.println(dst.da.pio);
-		}
-	}
-#else
-	union s_adr src;
-
-	for (i = 0; i < (MAX_BUS * MAX_SWITCHES); i++) {
+	Serial.println(F("= Switches ="));
+	for (i = 0; i < MAX_SWITCHES; i++) {
 		src.data = sw_tbl[i].src.data;
 		dst.data = sw_tbl[i].dst.data;
 		if (src.data == 0)
@@ -441,31 +434,60 @@ void CmdCli::dumpSwTbl(void)
 		size += sizeof(struct _sw_tbl);
 		src.sa.res = 0;
 		Serial.print(src.sa.bus);
-		Serial.print(".");
+		Serial.print(F("."));
 		Serial.print(src.sa.adr);
-		Serial.print(".");
+		Serial.print(F("."));
 		Serial.print(src.sa.press * 10 + src.sa.latch);
-		Serial.print(" -> ");
+		Serial.print(F(" -> "));
 		Serial.print(dst.da.bus);
-		Serial.print(".");
+		Serial.print(F("."));
 		Serial.print(dst.da.adr);
-		Serial.print(".");
+		Serial.print(F("."));
 		Serial.print(dst.da.pio);
-		Serial.print(" (");
+		Serial.print(F(" ("));
 		Serial.print(src.data, HEX);
-		Serial.print(" | ");
+		Serial.print(F(" | "));
 		Serial.print(dst.data, HEX);
-		Serial.println(")");
+		Serial.println(F(")"));
 	}
-#endif	
-	Serial.print("Size=");
+	Serial.print(F("Size="));
 	Serial.print(size);
-	Serial.print("/");
+	Serial.print(F("/"));
 	Serial.println(sizeof(sw_tbl));
 	sw_tbl_len = size;
+	size = 0;
+	Serial.println(F("= Timed ="));
+	for (i = 0; i < MAX_TIMED_SWITCH; i++) {
+		src.data = timed_tbl[i].src.data;
+		dst.data = timed_tbl[i].dst.data;
+		if (src.data == 0 || dst.data == 0)
+			continue;
+		if (src.data == 0xffff && dst.data == 0xff)
+			continue;
+		size += sizeof(struct _sw_tbl);
+		src.sa.res = 0;
+		Serial.print(src.sa.bus);
+		Serial.print(F("."));
+		Serial.print(src.sa.adr);
+		Serial.print(F("."));
+		Serial.print(src.sa.press * 10 + src.sa.latch);
+		Serial.print(F(" -> "));
+		Serial.print(dst.da.bus);
+		Serial.print(F("."));
+		Serial.print(dst.da.adr);
+		Serial.print(F("."));
+		Serial.print(dst.da.pio);
+		Serial.print(F(" ("));
+		Serial.print(src.data, HEX);
+		Serial.print(F(" | "));
+		Serial.print(dst.data, HEX);
+		Serial.println(F(")"));
+	}
+	Serial.print(F("Size="));
+	Serial.print(size);
+	Serial.print(F("/"));
+	Serial.println(sizeof(timed_tbl));
 }
-
-extern void initSwTable();
 
 void CmdCli::funcSwCmd(CmdParser *myParser)
 {
@@ -480,45 +502,65 @@ void CmdCli::funcSwCmd(CmdParser *myParser)
 	if (myParser->getParamCount() == 1) {
 		c = myParser->getCmdParam(1);
 		if (*c == '?') {
-			Serial.println ("1: read");
-			Serial.println ("2: save");
-			Serial.println ("3: clear");
+			Serial.println (F("r: read"));
+			Serial.println (F("s: save"));
+			Serial.println (F("c: clear"));
 			return;
 		}
-		byte cmd = atoi(myParser->getCmdParam(1));
 		uint8_t vers;
 
-		switch (cmd) {
-			case 1: 	// read eeprom
+		switch (*c) {
+			case 'r': 	// read eeprom
 			{
-				initSwTable();
+				swHdl.initSwTable();
 				break;
 			}
-			case 2:		// write eeprom
+			case 's':		// write eeprom
+				uint16_t pos, len;
+
 				vers = 2;
 				me->dumpSwTbl();
 				eeprom_write_byte((uint8_t*)0, vers);
 				eeprom_write_word((uint16_t*)2, sw_tbl_len);
 				eeprom_write_block((const void*)sw_tbl, (void*)4, sw_tbl_len);
+				pos = 4 + sw_tbl_len;
 				Serial.print(F("EEPROM saved ("));
-				Serial.print(sizeof(sw_tbl));
+				Serial.print(sw_tbl_len);
+				Serial.println(F(" bytes, "));
+				
+				/* timed table ... */
+				vers = 1;
+				eeprom_write_byte((uint8_t*)pos, vers);
+				pos += 2;
+				eeprom_write_word((uint16_t*)pos, sizeof(timed_tbl));
+				pos += 2;
+				len = sizeof(timed_tbl);
+				eeprom_write_block((const void*)timed_tbl, (void*)pos, len);
+				Serial.print(sizeof(timed_tbl));
 				Serial.println(F(" bytes)"));
+				
+				/* dim table ... */
 				break;
-			case 3:
+			case 'c':
 				memset (sw_tbl, 0, sizeof(sw_tbl));
 				sw_tbl_len = 0;
+				memset (timed_tbl, 0, sizeof(timed_tbl));
 				break;
 		}
 		// cmd like store to eeprom
 	}
 	src.data = 0;
 	dst.data = 0;
-	if (myParser->getParamCount() == 3 || myParser->getParamCount() > 5 ) {
+	if (myParser->getParamCount() == 4 || myParser->getParamCount() > 6 ) {
 		uint8_t latch;
 
-		src.sa.bus = atoi(myParser->getCmdParam(1));
-		src.sa.adr = atoi(myParser->getCmdParam(2)); 
-		latch = atoi(myParser->getCmdParam(3));
+		c = myParser->getCmdParam(1);
+		/* s: switch table
+		 * t: timed table
+		 */
+		src.sa.bus = atoi(myParser->getCmdParam(2));
+		src.sa.adr = atoi(myParser->getCmdParam(3)); 
+		latch = atoi(myParser->getCmdParam(4));
 		if (latch - 30 > 0) {
 			/* pressing */
 			src.sa.press = 2;
@@ -539,10 +581,11 @@ void CmdCli::funcSwCmd(CmdParser *myParser)
 		Serial.print(" ");
 		Serial.print(src.sa.press, HEX);
 		Serial.print(" | ");
-		Serial.print(src.data, HEX);
+		Serial.println(src.data, HEX);
 	}
-	if (myParser->getParamCount() == 3) {
-		for (i = 0; i < (MAX_BUS * MAX_SWITCHES); i++) {
+	if (myParser->getParamCount() == 4) {
+		/* select table ... */
+		for (i = 0; i < MAX_SWITCHES; i++) {
 			if (sw_tbl[i].src.data == src.data) {
 				/* move following or last to here */
 				sw_tbl[i].src.data = 0;
@@ -550,22 +593,66 @@ void CmdCli::funcSwCmd(CmdParser *myParser)
 				break;
 			}
 		}
-	}
-	if (myParser->getParamCount() > 5) {
-		dst.da.bus = atoi(myParser->getCmdParam(4));
-		dst.da.adr = atoi(myParser->getCmdParam(5));
-		dst.da.pio = atoi(myParser->getCmdParam(6));
-		if (myParser->getParamCount() > 6)
-			dst.da.type = atoi(myParser->getCmdParam(7));
-		for (i = 0; i < (MAX_BUS * MAX_SWITCHES); i++) {
-			if (sw_tbl[i].src.data == 0 || sw_tbl[i].src.data == src.data) {
-				sw_tbl[i].src.data = src.data;
-				sw_tbl[i].dst.data = dst.data;
+		for (i = 0; i < MAX_TIMED_SWITCH; i++) {
+			if (timed_tbl[i].src.data == src.data) {
+				timed_tbl[i].src.data = 0;
+				timed_tbl[i].dst.data = 0xff;
 				break;
 			}
 		}
+	}
+	if (myParser->getParamCount() > 6) {
+		// byte time;
+		// 1:cmd, 2:bus, 3:adr, 4:latch
+		dst.da.bus = atoi(myParser->getCmdParam(5));
+		dst.da.adr = atoi(myParser->getCmdParam(6));
+		dst.da.pio = atoi(myParser->getCmdParam(7));
+		/*if (myParser->getParamCount() > 7)
+			time = atoi(myParser->getCmdParam(8));
+		*/
+		if (myParser->getParamCount() > 8)
+			dst.da.type = atoi(myParser->getCmdParam(9));
+		switch (*c) {
+			case 's':
+				for (i = 0; i < MAX_SWITCHES; i++) {
+					if (sw_tbl[i].src.data == 0 || sw_tbl[i].src.data == src.data) {
+						sw_tbl[i].src.data = src.data;
+						sw_tbl[i].dst.data = dst.data;
+						break;
+					}
+				}
+				break;
+			case 't':
+				for (i = 0; i < MAX_TIMED_SWITCH; i++) {
+					if (timed_tbl[i].src.data == 0 || timed_tbl[i].src.data == src.data) {
+						timed_tbl[i].src.data = src.data;
+						timed_tbl[i].dst.data = dst.data;
+						break;
+					}
+				}
+				break;
+		}
 		me->dumpSwTbl();
 	}
+}
+
+extern uint8_t sec;
+extern uint8_t min;
+extern uint8_t hour;
+
+void CmdCli::funcTime(CmdParser *myParser)
+{
+	if (myParser->getParamCount() == 2) {
+		hour = atoi(myParser->getCmdParam(1));
+		min = atoi(myParser->getCmdParam(2));
+		return;
+	}
+	Serial.print(hour);
+	Serial.print(F(":"));
+	Serial.print(min);
+	Serial.print(F(":"));
+	Serial.println(sec);
+
 }
 
 void CmdCli::resetInput()

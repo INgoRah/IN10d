@@ -12,6 +12,7 @@
 #endif
 #include <avr/sleep.h>
 #include <avr/pgmspace.h>
+
 /*
  * Library classs includes
  */
@@ -21,12 +22,12 @@
 #include <OneWire.h>
 #include "WireWatchdog.h"
 #include "TwiHost.h"
+#ifdef CLI_SUPPORT
 #include "CmdCli.h"
+#endif
 #include "OwDevices.h"
-#include "CircularBuffer.h"
-#include <DallasTemperature.h>
+#include "SwitchHandler.h"  
 
-#define DEBUG
 /*
  * Local constants
  */
@@ -35,20 +36,20 @@
 					ledOn = 1;
 #define LED_OFF() digitalWrite(13, 0); \
 					ledOn = 0;
-#define MAX_CMD_BUFSIZE 64
 
-struct _sw_tbl1 sw_tbl1[MAX_BUS][MAX_SWITCHES];
-
-struct _sw_tbl sw_tbl[MAX_BUS * MAX_SWITCHES];
-
-struct _sw_tbl time_tbl[MAX_TIMER];
-
-extern byte mode;
+byte mode;
+byte debug;
 
 /*
  * Objects
  */
+TwiHost host(0x2f);
 DS2482 ds1(0);
+OwDevices ow;
+SwitchHandler swHdl (&ow);
+OneWireBase *ds = &ds1;
+
+#if !defined(AVRSIM)
 
 WireWatchdog wdt0(A0);
 WireWatchdog wdt1(A1);
@@ -56,12 +57,14 @@ WireWatchdog wdt2(A2);
 WireWatchdog wdt3(A3);
 WireWatchdog* wdt[MAX_BUS] = { &wdt0, &wdt1, &wdt2, &wdt3 };
 
-TwiHost host(0x2f);
-OneWireBase *ds = &ds1;
 //OneWireBase* bus[3] = { &ds1, &ds1, &ds1 };
+#ifdef CLI_SUPPORT
 CmdCli cli;
-OwDevices ow;
-CircularBuffer<uint16_t, 10> events;
+#endif
+
+uint8_t sec;
+uint8_t min;
+uint8_t hour;
 
 /*
  * Local variables
@@ -76,13 +79,14 @@ uint8_t *hostData = NULL;
 /*
 * Function declarations
 */
-bool alarm_handler(byte busNr);
 void temp_read(byte busNr, byte addr[8]);
 
 void wdtAlarm() 
 {
 	Serial.println(F("Alarm test"));
 }
+
+extern struct _sw_tbl sw_tbl[MAX_SWITCHES];
 
 void hostCommand(uint8_t cmd, uint8_t data)
 {
@@ -96,8 +100,8 @@ void hostCommand(uint8_t cmd, uint8_t data)
 	{
 	case 0x01:
 		host.setStatus(STAT_BUSY);
-		if (events.size() > 0) {
-			d = events.pop();
+		if (host.events.size() > 0) {
+			d = host.events.pop();
 			evt_data[0] = (d & 0xff00) >> 8;
 			evt_data[1] = d & 0xff;
 			host.setData((uint8_t*)&evt_data, 2);
@@ -143,28 +147,12 @@ void hostCommand(uint8_t cmd, uint8_t data)
 		break;
 	case 0x5B:
 		free(hostData);
-		/*
-		host.setStatus(0x01);
-		Serial.print("searching ... ");
-		if (ds->search(&adr[1])) {
-			host.setStatus(0);
-			id++;
-			adr[0] = id;
-			host.setData(adr, 9);
-			Serial.println(id);
-		} else {
-			host.setStatus(0x80);
-			Serial.println("fail");
-		}
-		*/
 		break;
 	case 0x4B:
-		ow.statusRead(ds);
 		break;
 	case 0x02:
 	{
 		int i;
-		uint8_t bus;
 		union s_adr src;
 		union d_adr dst;
 		
@@ -178,19 +166,21 @@ void hostCommand(uint8_t cmd, uint8_t data)
 		while (!Wire.available());
 		src.sa.latch = Wire.read();
 		while (!Wire.available());
+		src.sa.press = Wire.read();
+		while (!Wire.available());
 		dst.da.bus = Wire.read();
 		while (!Wire.available());
 		dst.da.adr = Wire.read();
 		while (!Wire.available());
 		dst.da.pio = Wire.read();
-		for (i = 0; i < (MAX_BUS * MAX_SWITCHES); i++) {
+		for (i = 0; i < MAX_SWITCHES; i++) {
 			if (sw_tbl[i].src.data == 0 || sw_tbl[i].src.data == src.data) {
 				sw_tbl[i].src.data = src.data;
 				sw_tbl[i].dst.data = dst.data;
 				break;
 			}
 		}
-		Serial.print(bus);
+		Serial.print(src.sa.bus);
 		Serial.print(".");
 		Serial.print(src.sa.adr);
 		Serial.print(".");
@@ -205,82 +195,42 @@ void hostCommand(uint8_t cmd, uint8_t data)
 
 		break;
 	}
+	case 0x03:
+		byte bus, pio, level, d;
+		byte adr[8];
+		
+		host.setStatus(STAT_BUSY);
+		while (!Wire.available());
+		bus = Wire.read();
+		while (!Wire.available());
+		adr[1] = Wire.read();
+		while (!Wire.available());
+		// which pio to change
+		pio = Wire.read();
+		while (!Wire.available());
+		// on/off or dim level
+		level = Wire.read();
+		ow.adrGen(ds, bus, adr, adr[1]);
+		//ow.ds2408RegRead(ds, bus, adr, data, false);
+		d = ow.ds2408PioRead(ds, bus, adr);
+		if (d & pio && level == 0) {
+			// off
+			d &= ~(pio);
+		} else {
+			// on
+			d |= pio;
+			// set level if level 1 .. 16
+			// level = 0 is first valid level on my custom ds2408
+			if (level > 0 && level <= 16)
+				pio = ((level - 1) << 4) | pio;
+		}
+		ow.ds2408PioSet(ds, bus, adr, pio);
+		host.setStatus(STAT_OK);
+		break;
 	default:
 		Serial.print("unknown ");
 		Serial.println(cmd, HEX);
 		break;
-	}
-}
-
-int convertSwTbl1to2()
-{
-	byte j, i;
-	union s_adr src;
-	union s_adr1 src1;
-	union d_adr dst;
-	int size = 0, cnt = 0;
-
-	for (j = 0; j < MAX_BUS; j++) {
-		for (i = 0; i < MAX_SWITCHES; i++) {
-			src1.data = sw_tbl1[j][i].src.data;
-			dst.data = sw_tbl1[j][i].dst.data;
-			if (src1.data == 0)
-				continue;
-			if (src1.data == 0xff && dst.data == 0xff)
-				continue;
-			size += sizeof(union s_adr) + sizeof(union d_adr);
-			src.data = 0;
-			src.sa.bus = j;
-			/* old format didn't support long press */
-			src.sa.press = 0;
-			src.sa.adr = src1.sa.adr;
-			src.sa.latch = src1.sa.latch;
-			sw_tbl[cnt].src.data = src.data;
-			sw_tbl[cnt].dst.data = dst.data;
-			cnt++;
-		}
-	}
-
-	return size;
-}
-
-void initSwTable()
-{
-	uint16_t len, pos;
-	uint8_t vers;
-
-	vers = eeprom_read_byte((const uint8_t*)0);
-	len = eeprom_read_word((const uint16_t*)2);
-	pos = 4;
-	if (len != 0xFFFF && vers != 0xff) {
-		Serial.print("vers=");
-		Serial.print(vers);
-		Serial.print(" len=");
-		Serial.print(len);
-		switch (vers) {
-			case 1:
-				Serial.print(" tbl=");
-				Serial.println(sizeof(sw_tbl));
-				len = sizeof(sw_tbl1);
-				eeprom_read_block((void*)sw_tbl1, (const void*)pos, len);
-				len = convertSwTbl1to2();
-				Serial.print(" sw_tbl2 len=");
-				Serial.println(len);
-				break;
-			case 2:
-				eeprom_read_block((void*)sw_tbl, (const void*)pos, len);
-				break;
-		}
-	}
-	pos += len;
-	vers = eeprom_read_byte((const uint8_t*)pos);
-	len = eeprom_read_word((const uint16_t*)pos + 2);
-	pos += 4;
-	if (len != 0xFFFF && vers != 0xff) {
-		Serial.print("special vers=");
-		Serial.print(vers);
-		Serial.print(" len=");
-		Serial.print(len);
 	}
 }
 
@@ -290,15 +240,15 @@ void setup() {
 	ADCSRA = 0;	// disable ADC
 	Serial.begin(115200);
 
+	debug = 1;
 	Serial.print(F("One Wire Control..."));
 	digitalWrite(HOST_ALRM_PIN, HIGH);
 /*	digitalWrite(A1, HIGH);
 	pinMode(A1, OUTPUT);
 	digitalWrite(A3, LOW);
 	pinMode(A3, OUTPUT); */
+	mode = MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH;
 
-	delay (100);
-	initSwTable();
 	delay (10);
 	// wdt.onAlarm(wdtAlarm);
 	host.onCommand(hostCommand);
@@ -306,15 +256,17 @@ void setup() {
 	wdFired = 0;
 
 	ow.begin(ds);
-	delay (100);
+	swHdl.begin(ds);
 	PCMSK1 |= (_BV(PCINT8) | _BV(PCINT9) | _BV(PCINT10) | _BV(PCINT11));
-    PCIFR |= _BV(PCIF1); // clear any outstanding interrupt
-    PCICR |= _BV(PCIE1); // enable interrupt for the group	
+	PCIFR |= _BV(PCIF1); // clear any outstanding interrupt
+	PCICR |= _BV(PCIE1); // enable interrupt for the group	
 	delay (100);
 	wdTime = millis();
 	alarmPolling = millis();
 	Serial.println(F("active"));
+#ifdef CLI_SUPPORT
 	cli.begin(&ow);
+#endif
     /* Setup ADC to use int 1.1V reference 
     and select temp sensor channel */
     ADMUX = (1<<REFS1) | (1<<REFS0) | (1<<MUX3);
@@ -341,10 +293,10 @@ void setup() {
 	   162 = 21.5
 	   161 = 21.5
 	*/
-	Serial.print (Ctemp * 0.89286 - 297.42);
+	Serial.print (Ctemp * 0.89286 - 284.42);
 	Serial.println(" C");
 	ADCSRA = 0;	// disable ADC
-#if 1
+#if 0
 	uint8_t adr[8] = { 0x28, 0x65, 0x0E, 0xFD, 0x05, 0x00, 0x00, 0x4D };
 	ow.tempRead(ds, 0, adr);
 	delay(800);
@@ -386,27 +338,25 @@ void ledBlink()
 
 void loop()
 {
+	static unsigned long sec_time = 0;
+
+	if (millis() > (sec_time + 995)) {
+		sec_time = millis();
+		if (sec++ == 60) {
+			sec = 0;
+			if (min++ == 60) {
+				min = 0;
+				if (hour++ == 24)
+					hour = 0;
+			}
+		}
+	}
 	host.loop();
 	if (ledOnTime != 0 && !alarmSignal) {
 		ledBlink();
 	}
+	swHdl.loop();
 	if (alarmSignal) {
-		//Serial.println(F("Alarms signal "));
-#if 0
-		// is this needed? Line was high when
-		// alarm is set
- 		do {
-			delayMicroseconds (150);
-			p = wdt.lineRead();
-			if (p)
-				break;
-			delayMicroseconds (500);
-			if (cnt-- == 0) {
-				Serial.println(F("OW line fail"));
-				break;
-			}
-		} while (!p);
-#endif
 		// interrupt to host
 		digitalWrite (HOST_ALRM_PIN, LOW);
 		alarmPolling = millis();
@@ -415,7 +365,7 @@ void loop()
 			for (int i = 0; i < MAX_BUS; i++) {
 				if (wdt[i]->alarm) {
 					retry = 5;
-					while (!alarm_handler(i)) {
+					while (!swHdl.alarmHandler(i, mode)) {
 						if (retry-- == 0)
 							break;
 					}
@@ -430,7 +380,7 @@ void loop()
 		alarmPolling = millis();
 		if (mode & MODE_ALRAM_POLLING) {
 			for (int i = 0; i < MAX_BUS;i++)
-				alarm_handler(i);
+				swHdl.alarmHandler(i, mode);
 		}
 	}
 	if (mode & MODE_WATCHDOG && (wdFired == 0 && millis() - wdTime > 5000)) {
@@ -439,7 +389,9 @@ void loop()
 		//LED_ON();
 		ledOnTime = millis();
 	}
+#ifdef CLI_SUPPORT
 	cli.loop();
+#endif
 	 /*else
 		sleep_cpu();*/
 	sleep_enable();
@@ -448,197 +400,4 @@ void loop()
 	sleep_cpu();
 	sleep_disable();
 }
-
-uint8_t bitnumber(uint8_t bitmap)
-{
-	int i, res = 1;
-
-	for (i = 0x1; i <= 0x80; i = i << 1) {
-		if (bitmap & i)
-			return res;
-		res++;
-	}
-	/* invalid */
-	return 0xff;
-}
-
-bool switchHandle(uint8_t busNr, uint8_t adr1, uint8_t latch, uint8_t press)
-{
-	union s_adr src;
-	union d_adr dst;
-	int retry;
-
-	// busNr should be == addr[2]
-
-	src.data = 0;
-	src.sa.bus = busNr;
-	src.sa.adr =  adr1 & 0x3f;
-	Serial.print(src.sa.bus, HEX);
-	Serial.print(".");
-	Serial.print(src.sa.adr, HEX);
-	Serial.print(".");
-	/* first two latches are usually output
-	 * signaled from auto switch. The corresponding latch
-	 * is not signaled!
-	 * */
-	src.sa.latch = bitnumber(latch);
-	Serial.print(src.sa.latch, HEX);
-	if (press == 0) {
-		src.sa.press = 2;
-		Serial.println(F(" pressing"));
-		// find free timer and start it
-		// tmr.src = src...
-		tmr[0] = millis();
-		lvl_tbl[0].level = 0;
-		lvl_tbl[0].dst.da.bus = 2;
-		lvl_tbl[0].dst.da.adr = 3;
-	} else if (press > (500 / 32)) {
-		src.sa.press = 1;
-		Serial.print(F(" time="));
-		Serial.println(press * 8);
-		tmr[0] = 0;
-	} else {
-		src.sa.press = 0;
-		Serial.println();
-	}
-	Serial.println(src.data, HEX);
-
-	// put into fifo
-	events.push(src.data);
-	// todo: signal alarm only here once the data is available
-	if ((mode & MODE_AUTO_SWITCH) == 0)
-		return false;
-	/* Timed handler: reset or start timer 
-	 * based on PIR or standard light (bath)
-	 * PIR needs 1 min of initialization, ignore after start
-	 * Single trigger mode for 3 secs
-	bool handled;??
-	for (uint8_t i = 0; i < MAX_SIGNALS; i++) {
-		if (latch > 0 && src.data == sig_tbl[busNr][i][0]) {
-			check polarity and ignore falling edge?
-			High when motion is detected. Check before switching off
-		}
-	}
-	 */
-	/*
-	 * Standard handler: from 5 bit adr (1..1f) and 3 bit latch (0..7)
-	 * Get target switch
-	 */
-	for (uint8_t i = 0; i < (MAX_BUS * MAX_SWITCHES); i++) {
-		if (src.data == sw_tbl[i].src.data) {
-			byte adr[8];
-
-			dst.data = sw_tbl[i].dst.data;
-#ifdef DEBUG
-			Serial.print(F("switch #"));
-			Serial.print(i);
-			Serial.print(" ");
-			Serial.print(src.data, HEX);
-			Serial.print(" -> ");
-			Serial.print(dst.da.bus);
-			Serial.print(".");
-			Serial.print(dst.da.adr);
-			Serial.print(".");
-			Serial.println(dst.da.pio + 1);
-#endif
-			// type 0:
-			ow.adrGen(ds, dst.da.bus, adr, dst.da.adr);
-#if 0
-			Serial.print(" target=");
-			for (i = 0; i < 7; i++) {
-				Serial.write(' ');
-				Serial.print(adr[i], HEX);
-			}
-			Serial.write(' ');
-			Serial.println(adr[i], HEX);
-#endif
-#if 0
-	// type 1:
-		static uint8_t target[8] = { 0x3A, 0x01, 0xDA, 0x84, 0x00, 0x00, 0x05, 0xA3 };
-		ow.toggleDs2413 (bus[0], target);
-#endif			
-			retry = 5;
-			do {
-				ds->selectChannel(dst.da.bus);
-				latch = ow.ds2408TogglePio(ds, dst.da.bus, adr, dst.da.pio + 1, NULL);
-				if (latch == 0xAA) {
-					break;
-				}
-			} while (retry-- > 0);
-			if (latch != 0xAA)
-				return false;
-		}
-	}
-
-	return true;
-}
-
-/*
-switch table: input dev/pin to ouput bus/dev/pin
-output may have funcs like timer to switch off
-*/
-bool alarm_handler(byte busNr)
-{
-	//OneWireBase *ds;
-	byte addr[8];
-	byte j = 0;
-	uint8_t i, latch, data[10], retry = 5;
-	uint8_t cnt = 10;
-
-	//ds = bus[busNr];
-	ds->selectChannel(busNr);
-	ds->reset();
-	ds->reset_search();
-	while (ds->search(addr, false)) {
-		j++;
-		Serial.print(busNr);
-		Serial.print(F("@"));
-		for (i = 0; i < 8; i++) {
-			if (addr[i] < 0x10)
-				Serial.print(F("0"));
-			Serial.print(addr[i], HEX);
-		}
-		Serial.print(F(" "));
-		if ((mode & MODE_ALRAM_HANDLING) == 0) {
-			// interrupt to host
-			digitalWrite (HOST_ALRM_PIN, LOW);
-			return true;
-		}
-		latch = 0;
-		switch (addr[0]) {
-			case 0x29:
-				retry = 5;
-				do {
-					latch = ow.ds2408RegRead(ds, busNr, addr, data);
-					if (latch == 0xAA) {
-						latch = data[2];
-						break;
-					}
-				} while (retry-- > 0);
-#ifdef DEBUG				
-				Serial.print(" (");
-				Serial.print(data[1], HEX);
-				Serial.print(" ");
-				Serial.print(data[2], HEX);
-				Serial.print(") | ");
-#endif				
-				break;
-			case 0x28:
-				ow.tempRead(ds, busNr, addr);
-				return true;
-			case 0x35:
-				break;
-		}
-		if (latch != 0 && latch != 0xff) {
-			switchHandle(busNr, addr[1], latch, data[6]);
-		} else {
-			return false;
-		}
-		if (cnt-- == 0) {
-			Serial.println("Error searching");
-			break;
-		}
-	}
-
-	return j > 0 ? true : false;
-}
+#endif /* AVRSIM */

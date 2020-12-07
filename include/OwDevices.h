@@ -3,9 +3,6 @@
 
 #include <OneWireBase.h>
 
-#define MAX_BUS 4
-#define MAX_SWITCHES 2 * 8
-
 #define MAX_CFG_SIZE 26
 
 union s_adr {
@@ -48,16 +45,6 @@ union d_adr {
 	} da;
 };
 
-struct _sw_tbl {
-	union s_adr src;
-	union d_adr dst;
-};
-
-struct _sw_tbl1 {
-	union s_adr1 src;
-	union d_adr dst;
-};
-
 class OwDevices
 {
 	private:
@@ -74,6 +61,7 @@ class OwDevices
 		void ds2408Status(OneWireBase *ds, byte bus, byte adr[8], bool latch_reset = true);
 		void toggleDs2413(OneWireBase *ds, byte bus, uint8_t* addr);
 		void ds2408Data(OneWireBase *ds, byte bus, byte adr[8], uint8_t len);
+		uint8_t ds2408PioRead(OneWireBase *ds, byte bus, uint8_t* addr);
 		uint8_t ds2408PioSet(OneWireBase *ds, byte bus, uint8_t* addr, uint8_t pio);
 		uint8_t ds2408TogglePio(OneWireBase *ds, byte bus, uint8_t* addr, uint8_t pio, uint8_t* data = NULL);
 		void ds2408CfgWrite(OneWireBase *ds, byte bus, byte adr[8], uint8_t* d, uint8_t len);
@@ -81,7 +69,7 @@ class OwDevices
 		float tempRead(OneWireBase *ds, byte busNr, byte addr[8]);
 		void statusPrint(OneWireBase *ds, byte adr[8]);
 		void statusRead(OneWireBase *ds);
-		void search(OneWireBase *ds, byte bus);
+		int search(OneWireBase *ds, byte bus);
 };
 
 #endif

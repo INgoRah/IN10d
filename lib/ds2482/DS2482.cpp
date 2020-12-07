@@ -255,9 +255,7 @@ bool DS2482::search(uint8_t *newAddr, bool search_mode)
 	{
 		int romByte = (i-1)>>3;
 		int romBit = 1<<((i-1)&7);
-#ifdef DEBUG
-		Serial.print(".");
-#endif		
+
 		if (i < searchLastDisrepancy)
 			direction = searchAddress[romByte] & romBit;
 		else

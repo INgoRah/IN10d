@@ -25,6 +25,10 @@ with id: 0 .. F
 PIO0/1 are output
 Latch2..6 are input
 
+### Measures to overcome limitations
+- fixed or stable switches in program space: easy to access via different table
+- lookup in EEPROM: cache EEPROM or create new look up table (bus|adr = 4 x 31 lines returns dst by latch index),  max 1 KB
+
 ## I2C format
 C3 - channel select like in DS2482
 F0 - reset 
@@ -32,7 +36,8 @@ F0 - reset
 5A - search first device, wait for search cycle for reading, returns 0 if nothing found or | id | adr [8]
 5B - search next device, returns 0 if nothing found or | id | adr [8]
 01 - read one event from fifo, status: busy,ok,no_data
-02 - add switch entry:  type, bus, sa.adr, sa.latch, da.bus,da.adr,da.pio
+02 - add switch entry:  type, bus, adr1, latch, press [0..2], da.bus,da.adr,da.pio
+03 - write PIO: type, bus, adr1, pio
 
 status: alarm bus 3 | alarm bus 2 | alarm bus 1 | alarm bus0
 bus select
@@ -56,6 +61,7 @@ Examples
 # write config
     |BTN|PIN|POL|SW 1  2  3  4  5  6  7|CFG 1  2  3  4  5  6  7 |FEA|OFF|MAJ|MIN|TYP
 
-cfg 7 w 38 03 FF FF FF FF FF 01 FF FF FF FF FF 02 FF FF FF FF 02 FE 05 55 0
+cfg 7 w 83 03 FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FE 09 55 0
+cfg 3 w FF 01 FE FF FF FF FF FF FF FF FF 01 FF FF FF FF FF FF FF FE f3
 FF 3 FF FF FF FF FF FF FF FF FF FF FF FF FF FF 1 FF FF FE 6 1 2 0 D9 70
  0  1 2  3 4  5  6  7   8 9  10 11 12 13 14 15 1617 18 19 20212223 

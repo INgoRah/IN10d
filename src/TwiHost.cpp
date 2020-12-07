@@ -3,6 +3,7 @@
  */
 #include <Wire.h>
 #include <TwiHost.h>
+#include "SwitchHandler.h"  
 
 #define DS2482_CMD_RESET               0xF0	/* No param */
 #define DS2482_CMD_CHANNEL_SELECT      0xC3	/* Param: Channel byte - DS2482-800 only */
@@ -14,6 +15,7 @@ extern void ow_monitor();
 extern byte alarmSignal, wdFired, ledOn;
 extern unsigned long ledOnTime;
 extern unsigned long wdTime;
+extern byte mode;
 
 void (*TwiHost::user_onCommand)(uint8_t, uint8_t);
 
@@ -23,21 +25,20 @@ static uint8_t* rdData = NULL;
 static uint8_t rdLen, rdPos;
 uint8_t cmd = 0xFF;
 // registers
-byte cfg, ch, mode;
+byte cfg, ch;
 static uint8_t reg;
 static byte status;
+
 
 TwiHost::TwiHost(byte slaveAdr)
 {
 	this->slaveAdr = slaveAdr;
-	mode = 0;
 }
 
 void TwiHost::begin()
 {
 	cmd = 0xff;
 	rdLen = 0;
-	mode = MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH;
 	Wire.begin(slaveAdr);
 	Wire.onReceive(receiveEvent);
 	Wire.onRequest(requestEvent);

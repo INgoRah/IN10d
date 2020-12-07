@@ -2,13 +2,9 @@
 #define _TWIHOST_H
 
 #include <Arduino.h>       // for delayMicroseconds, digitalPinToBitMask, etc
+#include "CircularBuffer.h"
 
 #define MODE_WATCHDOG 0x1
-#define MODE_ALRAM_POLLING 0x2
-#define MODE_ALRAM_HANDLING 0x4
-#define MODE_AUTO_SWITCH 0x8
-
-#define HOST_ALRM_PIN 6
 
 #define DS2482_CHANNEL_SELECTION_REGISTER    0xD2	/* DS2482-800 only */
 
@@ -32,6 +28,8 @@ class TwiHost
 		static void requestEvent();
 
 public:
+	CircularBuffer<uint16_t, 10> events;
+
 	TwiHost(byte slaveAdr);
 	static void setReg(uint8_t _reg);
 	static void setStatus(uint8_t stat);
