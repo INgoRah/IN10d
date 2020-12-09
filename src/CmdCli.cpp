@@ -101,6 +101,7 @@ void CmdCli::begin(OwDevices* devs)
 	cmdCallback.addCmd("sw", &funcSwCmd);
 	cmdCallback.addCmd("temp", &funcTemp);
 	cmdCallback.addCmd("time", &funcTime);
+	cmdCallback.addCmd("log", &funcLog);
 
 	//cmdCallback.addCmd("test", &funcTest);
 	// reserve bytes for the inputString
@@ -653,6 +654,32 @@ void CmdCli::funcTime(CmdParser *myParser)
 	Serial.print(F(":"));
 	Serial.println(sec);
 
+}
+
+#include "TwiHost.h"
+extern TwiHost host;
+
+void CmdCli::funcLog(CmdParser *myParser)
+{
+	struct logData d;
+	union s_adr src;
+	int i;
+
+	for (i = 0; i < host.events.size(); i++) {
+		d = host.events[i];
+		src.data = d.data;
+		Serial.print(d.h);
+		Serial.print(F(":"));
+		Serial.print(d.min);
+		Serial.print(F(":"));
+		Serial.print(d.sec);
+		Serial.print(F(" "));
+		Serial.print(src.sa.bus, HEX);
+		Serial.print(F("."));
+		Serial.print(src.sa.adr, HEX);
+		Serial.print(F("."));
+		Serial.println(src.sa.latch, HEX);
+	}
 }
 
 void CmdCli::resetInput()

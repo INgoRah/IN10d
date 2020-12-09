@@ -18,6 +18,13 @@
 #define DS2482_MODE_REGISTER         0x69
 #define DS2482_DATA_REGISTER 0xA9
 
+struct logData {
+	byte h;
+	byte min;
+	byte sec;
+	uint16_t data;
+};
+
 class TwiHost
 {
 	private:
@@ -28,7 +35,7 @@ class TwiHost
 		static void requestEvent();
 
 public:
-	CircularBuffer<uint16_t, 10> events;
+	CircularBuffer<struct logData, 20> events;
 
 	TwiHost(byte slaveAdr);
 	static void setReg(uint8_t _reg);

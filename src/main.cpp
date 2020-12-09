@@ -49,6 +49,10 @@ OwDevices ow;
 SwitchHandler swHdl (&ow);
 OneWireBase *ds = &ds1;
 
+uint8_t sec;
+uint8_t min;
+uint8_t hour;
+
 #if !defined(AVRSIM)
 
 WireWatchdog wdt0(A0);
@@ -62,14 +66,10 @@ WireWatchdog* wdt[MAX_BUS] = { &wdt0, &wdt1, &wdt2, &wdt3 };
 CmdCli cli;
 #endif
 
-uint8_t sec;
-uint8_t min;
-uint8_t hour;
-
 /*
  * Local variables
  */
-byte alarmSignal, wdFired, ledOn = 0;
+byte alarmSignal, pinSignal, wdFired, ledOn = 0;
 unsigned long ledOnTime = 0;
 unsigned long wdTime = 0;
 static unsigned long alarmPolling = 0;
@@ -92,7 +92,6 @@ void hostCommand(uint8_t cmd, uint8_t data)
 {
 	uint8_t cnt, adr[8], j;
 	static uint8_t evt_data[2];
-	uint16_t d;
 	//static uint8_t buf[3 * 8];
 #define MAX_DATA (15 * 7)
 
@@ -101,9 +100,11 @@ void hostCommand(uint8_t cmd, uint8_t data)
 	case 0x01:
 		host.setStatus(STAT_BUSY);
 		if (host.events.size() > 0) {
+			struct logData d;
+
 			d = host.events.pop();
-			evt_data[0] = (d & 0xff00) >> 8;
-			evt_data[1] = d & 0xff;
+			evt_data[0] = (d.data & 0xff00) >> 8;
+			evt_data[1] = d.data & 0xff;
 			host.setData((uint8_t*)&evt_data, 2);
 			/*Serial.print(evt_data[1], HEX);
 			Serial.print(" ");
@@ -258,9 +259,11 @@ void setup() {
 	ow.begin(ds);
 	swHdl.begin(ds);
 	PCMSK1 |= (_BV(PCINT8) | _BV(PCINT9) | _BV(PCINT10) | _BV(PCINT11));
-	PCIFR |= _BV(PCIF1); // clear any outstanding interrupt
-	PCICR |= _BV(PCIE1); // enable interrupt for the group	
-	delay (100);
+	PCMSK2 |= (_BV(PCINT18) /*| _BV(PCINT19) | _BV(PCINT20) | _BV(PCINT21)*/);
+	PCIFR |= _BV(PCIF1) | _BV(PCIF2); // clear any outstanding interrupt
+	PCICR |= _BV(PCIE1) | _BV(PCIE2); // enable interrupt for the group	
+	
+	delay (50);
 	wdTime = millis();
 	alarmPolling = millis();
 	Serial.println(F("active"));
@@ -287,12 +290,6 @@ void setup() {
 	Ctemp = ADC;
 	Serial.print (Ctemp, HEX);
 	Serial.print(" ");
-	/* 166 = 25 ?
-	   164 = 22?
-	   162 = ??
-	   162 = 21.5
-	   161 = 21.5
-	*/
 	Serial.print (Ctemp * 0.89286 - 284.42);
 	Serial.println(" C");
 	ADCSRA = 0;	// disable ADC
@@ -322,6 +319,15 @@ ISR (PCINT1_vect) // handle pin change interrupt for A0 to A4 here
 	wdTime = millis();
 }
 
+/* Connector on D2 (PD2), D3 (PD4) - custom wire D4 (PD5), D5 (PD6) */
+ISR (PCINT2_vect) // handle pin change interrupt for A0 to A4 here
+{
+	if (PIND & _BV(PD2)) {
+		Serial.println("PIR!");
+		pinSignal |= 1;
+	}
+}
+
 void ledBlink()
 {
 	if (millis() - ledOnTime > 300) {
@@ -343,8 +349,12 @@ void loop()
 	if (millis() > (sec_time + 995)) {
 		sec_time = millis();
 		if (sec++ == 60) {
+			int light = analogRead(A6);
+			Serial.print(F("Darknes="));
+			Serial.println(light);
 			sec = 0;
 			if (min++ == 60) {
+				
 				min = 0;
 				if (hour++ == 24)
 					hour = 0;
@@ -356,9 +366,13 @@ void loop()
 		ledBlink();
 	}
 	swHdl.loop();
-	if (alarmSignal) {
+	if (pinSignal) {
 		// interrupt to host
 		digitalWrite (HOST_ALRM_PIN, LOW);
+		swHdl.switchHandle(3, 9, 1, 0xff, mode);
+		pinSignal = 0;
+	}
+	if (alarmSignal) {
 		alarmPolling = millis();
 		if (mode & MODE_ALRAM_HANDLING) {
 			int retry;

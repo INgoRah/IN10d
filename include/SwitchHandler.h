@@ -23,9 +23,9 @@ struct _sw_tbl {
 struct _dim_tbl {
 	union d_adr dst;
 	struct {
-		int level : 4;
-		int up : 1;
-		int dn : 1;
+		unsigned int level : 4;
+		unsigned int up : 1;
+		unsigned int dn : 1;
 	}lvl;
 };
 

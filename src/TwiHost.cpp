@@ -29,7 +29,6 @@ byte cfg, ch;
 static uint8_t reg;
 static byte status;
 
-
 TwiHost::TwiHost(byte slaveAdr)
 {
 	this->slaveAdr = slaveAdr;

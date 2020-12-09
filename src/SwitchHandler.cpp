@@ -89,6 +89,9 @@ void SwitchHandler::begin(OneWireBase *ds)
     this->ds = ds;
 	initSwTable();
 	memset (dim_tbl, 0, sizeof(dim_tbl));
+	dim_tbl[0].dst.da.bus = 2;
+	dim_tbl[0].dst.da.adr = 7;
+	dim_tbl[0].lvl.level = 0;
 	for (int i = 0; i < MAX_TIMER; i++) {
 		struct _timer_list* tmr = &tmr_list[i];
 		tmr->secs = 0;
@@ -107,12 +110,14 @@ bool SwitchHandler::timerUpdate(union d_adr dst, uint16_t secs)
 			tmr->dst.data = dst.data;
 			tmr->ms = millis();
 #ifdef DEBUG
-	Serial.print(F("start timer "));
-	Serial.print(dst.da.bus);
-	Serial.print(F("."));
-	Serial.print(dst.da.adr);
-	Serial.print(F("."));
-	Serial.println(dst.da.pio);
+			if (debug) {
+				Serial.print(F("start/update timer "));
+				Serial.print(dst.da.bus);
+				Serial.print(F("."));
+				Serial.print(dst.da.adr);
+				Serial.print(F("."));
+				Serial.println(dst.da.pio);
+			}
 #endif
 
 			return true;
@@ -132,12 +137,14 @@ void SwitchHandler::loop()
 			/* stop timer */
 			tmr->secs  = 0;
 #ifdef DEBUG
-	Serial.print(F("expired "));
-	Serial.print(tmr->dst.da.bus);
-	Serial.print(".");
-	Serial.print(tmr->dst.da.adr);
-	Serial.print(".");
-	Serial.println(tmr->dst.da.pio);
+			if (debug) {
+				Serial.print(F("expired "));
+				Serial.print(tmr->dst.da.bus);
+				Serial.print(".");
+				Serial.print(tmr->dst.da.adr);
+				Serial.print(".");
+				Serial.println(tmr->dst.da.pio);
+			}
 #endif
 			/* action with dst */
 			switchPio(tmr->dst, OFF);
@@ -165,15 +172,14 @@ void SwitchHandler::loop()
 #endif
 }
 
-static int8_t dimLevel(union d_adr dst)
+static byte dimLevel(union d_adr dst)
 {
 	for (uint8_t i = 0; i < MAX_DIMMER; i++) {
-		if (dst.da.bus == 2 && dst.da.adr == 7)
-			return 5;
-/*		if (dst.data == dim_tbl[i].dst.data) {
+		/*if (dst.da.bus == 2 && dst.da.adr == 7)
+			return 5;*/
+		if (dst.data == dim_tbl[i].dst.data) {
 			return dim_tbl[i].lvl.level;
 		}
-*/
 	}
 
 	return 0xFF;
@@ -218,6 +224,7 @@ static byte getVersion(byte bus, byte adr)
 static uint16_t srcData(uint8_t busNr, uint8_t adr1, uint8_t latch, uint8_t press)
 {
 	union s_adr src;
+	byte v;
 
 	src.data = 0;
 	src.sa.bus = busNr;
@@ -231,8 +238,6 @@ static uint16_t srcData(uint8_t busNr, uint8_t adr1, uint8_t latch, uint8_t pres
 		Serial.print(src.sa.latch, HEX);
 		Serial.print(F(" "));
 	}
-#if 1
-	byte v;
 	v = getVersion(src.sa.bus, src.sa.adr);
 
 	if (v < 3 || press == 0xff)
@@ -260,21 +265,32 @@ static uint16_t srcData(uint8_t busNr, uint8_t adr1, uint8_t latch, uint8_t pres
 				Serial.print(F(" time="));
 				Serial.println(press * 32);
 			}
-			//tmr[0] = 0;
 		} else {
 			src.sa.press = 0;
 			if (debug > 0)
 				Serial.println();
 		}
 	}
-#else
-		src.sa.press = 0;
-#endif	
 	if (debug > 0) {
 		Serial.println(src.data, HEX);
 	}
 
 	return src.data;
+}
+
+byte dimStage(byte dim)
+{
+	switch (dim) {
+		case 0:
+			return 5;
+		case 5:
+			return 10;
+		case 10:
+			return 15;
+		case 15:
+			return 0;
+	}
+	return 0;
 }
 
 bool SwitchHandler::switchPio(union d_adr dst, enum _pio_mode mode = TOGGLE)
@@ -284,14 +300,15 @@ bool SwitchHandler::switchPio(union d_adr dst, enum _pio_mode mode = TOGGLE)
 
 	bus = dst.da.bus;
 #ifdef DEBUG
-	Serial.print(bus);
-	Serial.print(".");
-	Serial.print(dst.da.adr);
-	Serial.print(".");
-	Serial.println(dst.da.pio);
+	if (debug) {
+		Serial.print(bus);
+		Serial.print(".");
+		Serial.print(dst.da.adr);
+		Serial.print(".");
+		Serial.println(dst.da.pio);
+	}
 #endif
-	// was pio + 1 ... ok for 0 and 1 (= 1,2)
-	pio = 1 << dst.da.pio;
+	 pio = 1 << dst.da.pio;
 	// type 0:
 	ow->adrGen(ds, bus, adr, dst.da.adr);
 #if 0
@@ -302,43 +319,44 @@ bool SwitchHandler::switchPio(union d_adr dst, enum _pio_mode mode = TOGGLE)
 	retry = 5;
 	do {
 		byte dim;
+
 		d = ow->ds2408PioRead(ds, bus, adr);
-		if (debug) {
-			Serial.print(F("PIO "));
-			Serial.print(pio, HEX);
-			Serial.print(" =");
-			Serial.print(d, HEX);
-		}
+		dim = dimLevel(dst);
 		if (dim == 0xFF && (d & pio) && mode == OFF) {
 			return false;
-			Serial.println(" is OFF");
 		}
 		if (dim == 0xFF && (d & pio) == 0 && mode == ON) {
-			Serial.println(" is ON");
 			return false;
-		}
-		dim = dimLevel(dst);
-		if (debug) {
-			Serial.print(F(" dim="));
-			Serial.print(dim, HEX);
 		}
 		switch (mode) {
 			case ON:
-				if (dim != 0xFF)
-					d |= (dim << 4) | pio;
+				if (dim != 0xFF) {
+					dim = dimStage(dim);
+					dim_tbl[0].lvl.level = dim;
+					d &= 0x0F;
+					if (dim == 0)
+						d &= ~(pio);
+					else
+						d |= (dim << 4) | pio;
+				}
 				else
 					d &= ~(pio);
 				break;
 			case OFF:
-				if (dim != 0xFF)
-					d = 0;
+				if (dim != 0xFF) {
+					d &= ~(pio | 0xF0);
+					dim_tbl[0].lvl.level = 0;
+				}
 				else 
 					d |= pio;
 				break;
 			case TOGGLE:
 				if (dim != 0xFF) {
-					if (d & pio)
-						d = 0;
+					dim = dimStage(dim);
+					dim_tbl[0].lvl.level = dim;
+					d &= 0x0F;
+					if (dim == 0)
+						d &= ~(pio);
 					else
 						d |= (dim << 4) | pio;
 				}
@@ -365,17 +383,26 @@ bool SwitchHandler::switchPio(union d_adr dst, enum _pio_mode mode = TOGGLE)
 	return true;
 }
 
-#define DEF_SECS 15
+#define DEF_SECS 30
+
+extern uint8_t sec;
+extern uint8_t min;
+extern uint8_t hour;
 
 /* latch - bit mask to be converted to bit number */
 bool SwitchHandler::switchHandle(uint8_t busNr, uint8_t adr1, uint8_t latch, uint8_t press, byte mode)
 {
 	union s_adr src;
+	struct logData d;
 
 	// busNr should be == addr[2]
 	src.data = srcData(busNr, adr1, latch, press);
 	// put into fifo
-	host.events.push(src.data);
+	d.data = src.data;
+	d.h = hour;
+	d.min = min;
+	d.sec = sec;
+	host.events.push(d);
 
 	// todo: signal alarm only here once the data is available
 	if ((mode & MODE_AUTO_SWITCH) == 0)
@@ -396,13 +423,14 @@ bool SwitchHandler::switchHandle(uint8_t busNr, uint8_t adr1, uint8_t latch, uin
 				Serial.print(" -> ");
 			}
 #endif
-			/* switch press:
-			 *   - if off: switch on and start timer
-			 *   - if on/timer running: reset timer
-			 * High when motion is detected. Check before switching off
-			 */
 			if (timed_tbl[i].dst.data == 0 || timed_tbl[i].dst.data == 0xFF)
 				return false;
+			/* switch press:
+			 *   - if off: switch on and start timer
+			 *   - if on with timer running: reset timer
+			 *   - if on without timer: switch off
+			 * High when motion is detected. Check before switching off
+			 */
 			/* default action: switch on and start timer for off */
 			switchPio(timed_tbl[i].dst, ON);
 			/*  if on/timer running: reset timer or start timer */
@@ -432,7 +460,6 @@ bool SwitchHandler::switchHandle(uint8_t busNr, uint8_t adr1, uint8_t latch, uin
 
 bool SwitchHandler::alarmHandler(byte busNr, byte mode)
 {
-	//OneWireBase *ds;
 	byte addr[8];
 	byte j = 0;
 	uint8_t i, latch, data[10], retry = 5;
