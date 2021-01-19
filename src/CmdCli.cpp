@@ -6,16 +6,16 @@
  */
 #include "CmdCli.h"
 #include <avr/pgmspace.h>
+#include <avr/wdt.h>
 /*
  * Library classs includes
  */
 #include <Wire.h>
 #include <OneWireBase.h>
 #include <DS2482.h>
-#include <OneWire.h>
 #include <OwDevices.h>
 #include "WireWatchdog.h"
-#include "SwitchHandler.h"  
+#include "SwitchHandler.h"
 
 /*
  * Local constants
@@ -88,22 +88,21 @@ void CmdCli::begin(OwDevices* devs)
 	me = this;
 	ow = devs;
 	curBus = 0;
-	cmdCallback.addCmd("srch", &funcSearch);
+	cmdCallback.addCmd("srch", &funcSearch);// 1
+	cmdCallback.addCmd("s", &funcStatus); 	// 2
+	cmdCallback.addCmd("mode", &funcMode);	// 3
+	cmdCallback.addCmd("p", &funcPio);		// 4
+	cmdCallback.addCmd("bus", &funcBus); 	// 5
+	cmdCallback.addCmd("cfg", &funcCfg);	// 6
+	cmdCallback.addCmd("c", &funcCmd);		// 7
+	cmdCallback.addCmd("sw", &funcSwCmd);	// 8
+	cmdCallback.addCmd("t", &funcTemp);		// 9
+	//cmdCallback.addCmd("time", &funcTime);
+#ifdef EXT_DEBUG
 	cmdCallback.addCmd("pset", &funcPinSet);
 	cmdCallback.addCmd("pget", &funcPinGet);
-	cmdCallback.addCmd("stat", &funcStatus);
-	cmdCallback.addCmd("mode", &funcMode);
-	cmdCallback.addCmd("pio", &funcPio);
-	cmdCallback.addCmd("data", &funcData);
-	cmdCallback.addCmd("bus", &funcBus);
-	cmdCallback.addCmd("cfg", &funcCfg);
-	cmdCallback.addCmd("cmd", &funcCmd);
-	cmdCallback.addCmd("sw", &funcSwCmd);
-	cmdCallback.addCmd("temp", &funcTemp);
-	cmdCallback.addCmd("time", &funcTime);
 	cmdCallback.addCmd("log", &funcLog);
-
-	//cmdCallback.addCmd("test", &funcTest);
+#endif
 	// reserve bytes for the inputString
 	inputString.reserve(MAX_CMD_BUFSIZE);
 	resetInput();
@@ -124,7 +123,7 @@ void CmdCli::loop()
 		{
 			Serial.println(F("err"));
 		}
-		
+
 		resetInput();
 	}
 }
@@ -132,25 +131,13 @@ void CmdCli::loop()
 void CmdCli::funcBus(CmdParser *myParser)
 {
 	int i;
-	
+
 	if (myParser->getParamCount() > 0) {
 		i = atoi(myParser->getCmdParam(1));
-		//ds = bus[i];
 		curBus = i;
 	} else {
-		bool p;
-
-		Serial.print(F("status="));
-		Serial.print(ds->status);
-		Serial.print(F(", address="));
-		Serial.print(ds->mAddress, HEX);
-		Serial.print(F(", bus="));
+		Serial.print(F("bus="));
 		Serial.println(curBus);
-		Serial.print(F("  ow_pin="));
-		for (i = 0; i < MAX_BUS; i++) {
-			p = wdt[i]->lineRead();
-			Serial.print(p);
-		}
 		Serial.println();
 	}
 }
@@ -160,17 +147,17 @@ void CmdCli::funcSearch(CmdParser *myParser)
 	int i, res;
 
 	for (i = 0; i < 4; i++) {
-		Serial.print(F("Ch "));
+		Serial.print(F("== Ch "));
 		Serial.print(i);
-		Serial.print(F(": "));
+		Serial.println(F(" =="));
+		wdt_reset();
 		res = ow->search(ds, i);
 		if (res > 0) {
 			Serial.print(res);
-			Serial.println(F(" sensors found"));
+			Serial.println(F(" devs found"));
 		} else {
 			Serial.println(F("no devs!"));
 		}
-
 	}
 }
 
@@ -185,9 +172,19 @@ void CmdCli::funcStatus(CmdParser *myParser)
 		adr[1] = atoi(myParser->getCmdParam(1));
 		if (myParser->getParamCount() > 1)
 			res = atoi(myParser->getCmdParam(2));
-		else 
+		else
 			res = false;
 		ow->adrGen(ds, curBus, adr, adr[1]);
+#if EXT_DEBUG
+		if (debug) {
+			int i;
+			for (i = 0; i < 7; i++) {
+				Serial.print(adr[i], HEX);
+				Serial.print(F(" "));
+			}
+			Serial.println(adr[i], HEX);
+		}
+#endif
 		ow->ds2408RegRead(ds, curBus, adr, data, res);
 		Serial.print(F("Data "));
 		for (i = 0; i < 9; i++) {
@@ -196,8 +193,7 @@ void CmdCli::funcStatus(CmdParser *myParser)
 		}
 		Serial.println(data[i], HEX);
 
-	} else
-		ow->statusRead(ds);
+	}
 }
 
 void CmdCli::funcPio(CmdParser *myParser)
@@ -207,14 +203,21 @@ void CmdCli::funcPio(CmdParser *myParser)
 	union d_adr dst;
 
 	// channel first
-	adr[1] = me->atoh(myParser->getCmdParam(1), false);
+	adr[1] = atoi(myParser->getCmdParam(1));
 	pio = atoi(myParser->getCmdParam(2));
-	dst.da.bus = curBus;	
-	dst.da.adr = adr[1];
-	dst.da.pio = pio;
-	dst.da.type = 0;
-	Serial.print(F("target="));
-	Serial.println(dst.data, HEX);
+	if (myParser->getParamCount() > 2) {
+		level = atoi(myParser->getCmdParam(3));
+		dst.da.bus = curBus;
+		dst.da.adr = adr[i];
+		dst.da.pio = pio;
+		swHdl.switchLevel(dst, level);
+		return;
+	}
+	if (curBus == 0 && adr[1] == 9 && pio == 1) {
+		analogWrite(5, level);
+		return;
+	}
+
 	switch (adr[1]) {
 		case 10:
 			static uint8_t target[8] = { 0x3A, 0x01, 0xDA, 0x84, 0x00, 0x00, 0x05, 0xA3 };
@@ -229,7 +232,6 @@ void CmdCli::funcPio(CmdParser *myParser)
 			}
 			Serial.println(data[i], HEX);
 			if (myParser->getParamCount() > 2) {
-				level = atoi(myParser->getCmdParam(3));
 				Serial.print(F("Level: "));
 				Serial.println(level);
 				if (pio == 1)
@@ -237,7 +239,6 @@ void CmdCli::funcPio(CmdParser *myParser)
 				else
 					level = 0;
 				ow->ds2408PioSet(ds, curBus, adr, level);
-
 			} else
 				ow->ds2408TogglePio(ds, curBus, adr, 1 << pio, data);
 			ow->ds2408RegRead(ds, curBus, adr, data, true);
@@ -251,69 +252,59 @@ void CmdCli::funcPio(CmdParser *myParser)
 
 void CmdCli::funcTemp(CmdParser *myParser)
 {
-	byte adr[8], data[10];
-	int i;
-
+	byte adr[8];
+	uint16_t temp;
+#if 0
 	if (myParser->getParamCount() == 0) {
 		uint8_t adrt[8] = { 0x28, 0x65, 0x0E, 0xFD, 0x05, 0x00, 0x00, 0x4D };
 		float temp;
 		byte bus;
 
 		bus = 0;
-		ow->tempRead (ds, bus, adrt);
-		delay(800);
-		temp = ow->tempRead (ds, bus, adrt);
-		Serial.print(temp);
-		Serial.println(F(" C"));
-
-		bus = 1;
-		adr[1] = 7;	
-		ow->adrGen(ds, bus, adr, adr[1]);
-		ow->ds2408PioSet(ds, bus, adr, 0x44);
+		ow->tempRead (ds, bus, adrt, 0);
 		delay(200);
-		ow->ds2408RegRead (ds, bus, adr, data, true);
-		Serial.print(data[6]);
+		temp = ow->tempRead (ds, bus, adrt, 1);
+		Serial.print(temp / 16);
 		Serial.println(F(" C"));
 
 		return;
 	}
+#endif
 	// channel first
 	adr[1] = me->atoh(myParser->getCmdParam(1), false);
 	if (adr[1] > 10) {
 		uint8_t adrt[8] = { 0x28, 0x65, 0x0E, 0xFD, 0x05, 0x00, 0x00, 0x4D };
-		float temp;
 
-		ow->tempRead (ds, curBus, adrt);
+		ow->tempRead (ds, curBus, adrt, 0);
 		delay(800);
-		temp = ow->tempRead (ds, curBus, adrt);
-		Serial.print(temp);
+		temp = ow->tempRead (ds, curBus, adrt, 1);
+		Serial.print((float)(temp / 16));
 		Serial.println(F(" C"));
 		return;
 	}
+	adr[0] = 0x28;
 	ow->adrGen(ds, curBus, adr, adr[1]);
-	ow->ds2408PioSet(ds, curBus, adr, 0x44);
-	delay(200);
-	ow->ds2408RegRead (ds, curBus, adr, data, false);
-	Serial.print(F("Data "));
-	for (i = 0; i < 9; i++) {
-		Serial.print(data[i], HEX);
-		Serial.print(F(" "));
+#if EXT_DEBUG
+	if (debug) {
+		int i;
+		for (i = 0; i < 7; i++) {
+			Serial.print(adr[i], HEX);
+			Serial.write(' ');
+		}
+		Serial.println(adr[i], HEX);
 	}
-	Serial.println(data[i], HEX);
-	Serial.print(data[6]);
+#endif
+	ow->tempRead (ds, curBus, adr, 0);
+	delay(100);
+	temp = ow->tempRead (ds, curBus, adr, 1);
+	Serial.print((float)(temp / 16));
 	Serial.println(F(" C"));
 
 }
 
-void CmdCli::funcData(CmdParser *myParser)
-{
-	uint8_t len;
-	byte adr[8];
-
-	adr[1] = atoi(myParser->getCmdParam(1));
-	len = atoi(myParser->getCmdParam(2));
-	ow->ds2408Data(ds, curBus, adr, len);
-}
+extern byte light_sensor;
+extern uint16_t light;
+extern uint8_t sun;
 
 void CmdCli::funcMode(CmdParser *myParser)
 {
@@ -325,34 +316,12 @@ void CmdCli::funcMode(CmdParser *myParser)
 		debug = atoi(myParser->getCmdParam(2));
 	Serial.print(F(" debug="));
 	Serial.print(debug);
-}
-
-void CmdCli::funcPinSet(CmdParser *myParser)
-{
-	uint8_t pin, val;
-
-	Serial.print(F("pset: "));
-	pin = atoi(myParser->getCmdParam(1));
-	Serial.print(F(" pin: "));
-	Serial.print(pin);
-	Serial.print(F(" val: "));
-	val = atoi(myParser->getCmdParam(2));
-	Serial.println(val);
-	pinMode(pin, OUTPUT);
-	digitalWrite (pin, val);
-}
-
-void CmdCli::funcPinGet(CmdParser *myParser)
-{
-	uint8_t pin, val;
-
-	Serial.print(F("pget: "));
-	pin = atoi(myParser->getCmdParam(1));
-	Serial.print(F(" pin: "));
-	Serial.print(pin);
-	val = digitalRead(pin);
-	Serial.print(F(" val: "));
-	Serial.print(val);
+	Serial.print(F(" light="));
+	Serial.print(light);
+	Serial.print(F(" light sensor="));
+	Serial.print(light_sensor);
+	Serial.print(F(" sun="));
+	Serial.print(sun);
 }
 
 void CmdCli::funcCfg(CmdParser *myParser)
@@ -370,8 +339,12 @@ void CmdCli::funcCfg(CmdParser *myParser)
 	}
 	// channel first
 	adr[1] = atoi(myParser->getCmdParam(1));
-	c = myParser->getCmdParam(2);
+	if (adr[1] > 20) {
+		adr[1] = adr[1] - 20;
+		adr[0] = 0x28;
+	}
 	ow->adrGen(ds, curBus, adr, adr[1]);
+	c = myParser->getCmdParam(2);
 	if (*c == 'w') {
 		for (i = 0; i < MAX_CFG_SIZE; i++) {
 			if (myParser->getParamCount() > (uint8_t)(1 + i))
@@ -407,17 +380,84 @@ void CmdCli::funcCfg(CmdParser *myParser)
 	}
 }
 
+/*
+
+Examples:
+c 7 1 f8 1f ff ff WOHNEN
+c 7 2 00 00 f8 00 18.6
+c 7 4 07 e0 00 00 n.a.
+c 7 6 08 61 07 e0 21.5
+
+c 7 6 ff ff 00 1f kalt
+c 7 8 07 e0 00 00 22.1
+
+c 7 9 07 ff 00 00 CONTROL
+c 7 c 07 e0 00 00 "WLAN AN"
+
+c 7 4 00 00 07 e0 " 22.3"
+c 7 2 07 e0 08 61 18.3
+c 7 3 00 1e 00 00 HALLO
+c 7 4 00 1e 00 00 IRENE
+c 7 5 07 ff 00 00 11:42
+
+c 7 a 84 10 00 00 11:42
+
+c 7 8 07 ff 00 00 STURM
+*/
 void CmdCli::funcCmd(CmdParser *myParser)
 {
-	byte cmd, data;
+	byte d;
+	byte adr[8];
+	char *txt;
+	byte data[10];
+	int i;
 
-	cmd = me->atoh(myParser->getCmdParam(1));
-	if (myParser->getParamCount() > 1)
-		data = atoi(myParser->getCmdParam(2));
-	hostCommand (cmd, data);
+	adr[1] = me->atoh(myParser->getCmdParam(1), false);
+	d = me->atoh(myParser->getCmdParam(2), false);
+	ow->adrGen(ds, curBus, adr, adr[1]);
+#if 0
+	ow->ds2408PioSet(ds, curBus, adr, d);
+#else
+	data[0] = d;
+#endif
+
+	if (myParser->getParamCount() > 2) {
+		for (i = 0; i < 4; i++) {
+			d = me->atoh(myParser->getCmdParam(3 + i), false);
+#if 0
+			ow->ds2408PioSet(ds, curBus, adr, d);
+#else
+			data[1 + i] = d;
+#endif
+		}
+	}
+	if (myParser->getParamCount() > 6) {
+		txt = myParser->getCmdParam(7);
+		for (i = 0; i < 8; i++) {
+			if (txt[i] == 0) {
+#if 1
+				data[5 + i] = 0;
+				ow->ds2408ChWrite(ds, curBus, adr, data, 5 + i);
+#else
+				ow->ds2408PioSet(ds, curBus, adr, 0);
+#endif
+				Serial.println('<');
+
+				return;
+			} else
+#if 1
+				data[5 + i] = txt[i];
+#else
+				ow->ds2408PioSet(ds, curBus, adr, txt[i]);
+#endif
+			Serial.print(txt[i], HEX);
+			Serial.print(' ');
+		}
+	}
+	Serial.println();
 }
 
-void CmdCli::dumpSwTbl(void) 
+void CmdCli::dumpSwTbl(void)
 {
 	byte i;
 	union d_adr dst;
@@ -490,6 +530,11 @@ void CmdCli::dumpSwTbl(void)
 	Serial.println(sizeof(timed_tbl));
 }
 
+/*
+latch 0 .. 7: normal press
+latch 20 .. 27: long press
+latch 30 .. 37: pressing
+*/
 void CmdCli::funcSwCmd(CmdParser *myParser)
 {
 	byte i;
@@ -528,7 +573,7 @@ void CmdCli::funcSwCmd(CmdParser *myParser)
 				Serial.print(F("EEPROM saved ("));
 				Serial.print(sw_tbl_len);
 				Serial.println(F(" bytes, "));
-				
+
 				/* timed table ... */
 				vers = 1;
 				eeprom_write_byte((uint8_t*)pos, vers);
@@ -539,7 +584,7 @@ void CmdCli::funcSwCmd(CmdParser *myParser)
 				eeprom_write_block((const void*)timed_tbl, (void*)pos, len);
 				Serial.print(sizeof(timed_tbl));
 				Serial.println(F(" bytes)"));
-				
+
 				/* dim table ... */
 				break;
 			case 'c':
@@ -560,7 +605,7 @@ void CmdCli::funcSwCmd(CmdParser *myParser)
 		 * t: timed table
 		 */
 		src.sa.bus = atoi(myParser->getCmdParam(2));
-		src.sa.adr = atoi(myParser->getCmdParam(3)); 
+		src.sa.adr = atoi(myParser->getCmdParam(3));
 		latch = atoi(myParser->getCmdParam(4));
 		if (latch - 30 > 0) {
 			/* pressing */
@@ -591,14 +636,12 @@ void CmdCli::funcSwCmd(CmdParser *myParser)
 				/* move following or last to here */
 				sw_tbl[i].src.data = 0;
 				sw_tbl[i].dst.data = 0xff;
-				break;
 			}
 		}
 		for (i = 0; i < MAX_TIMED_SWITCH; i++) {
 			if (timed_tbl[i].src.data == src.data) {
 				timed_tbl[i].src.data = 0;
 				timed_tbl[i].dst.data = 0xff;
-				break;
 			}
 		}
 	}
@@ -640,13 +683,52 @@ void CmdCli::funcSwCmd(CmdParser *myParser)
 extern uint8_t sec;
 extern uint8_t min;
 extern uint8_t hour;
+extern uint8_t sun;
+#ifdef EXT_DEBUG
+void CmdCli::funcPinSet(CmdParser *myParser)
+{
+	uint8_t pin, val;
 
+	pin = atoi(myParser->getCmdParam(1));
+	Serial.print(F(" val: "));
+	val = atoi(myParser->getCmdParam(2));
+	Serial.println(val);
+	if (pin == 5)
+		analogWrite(5, val);
+	else {
+		pinMode(pin, OUTPUT);
+		digitalWrite (pin, val);
+	}
+}
+
+void CmdCli::funcPinGet(CmdParser *myParser)
+{
+	int pin, val;
+
+	pin = atoi(myParser->getCmdParam(1));
+	if (pin == 20) {
+		ADCSRA = (1<<ADPS2) | (1<<ADPS1) | (1<<ADEN);
+		delay(10);
+		val = analogRead(A6);
+		light = val;
+		ADCSRA = 0;
+	}
+	else
+		val = digitalRead(pin);
+	Serial.print(F(" val: "));
+	Serial.print(val);
+}
+
+#if 0
 void CmdCli::funcTime(CmdParser *myParser)
 {
-	if (myParser->getParamCount() == 2) {
+	if (myParser->getParamCount() > 1) {
 		hour = atoi(myParser->getCmdParam(1));
 		min = atoi(myParser->getCmdParam(2));
 		return;
+	}
+	if (myParser->getParamCount() == 3) {
+		sun = atoi(myParser->getCmdParam(3));
 	}
 	Serial.print(hour);
 	Serial.print(F(":"));
@@ -655,6 +737,7 @@ void CmdCli::funcTime(CmdParser *myParser)
 	Serial.println(sec);
 
 }
+#endif
 
 #include "TwiHost.h"
 extern TwiHost host;
@@ -667,20 +750,27 @@ void CmdCli::funcLog(CmdParser *myParser)
 
 	for (i = 0; i < host.events.size(); i++) {
 		d = host.events[i];
-		src.data = d.data;
+		src.data = d.source;
 		Serial.print(d.h);
 		Serial.print(F(":"));
 		Serial.print(d.min);
 		Serial.print(F(":"));
 		Serial.print(d.sec);
 		Serial.print(F(" "));
+		Serial.print(d.type);
+		Serial.print(F(" "));
 		Serial.print(src.sa.bus, HEX);
 		Serial.print(F("."));
 		Serial.print(src.sa.adr, HEX);
-		Serial.print(F("."));
-		Serial.println(src.sa.latch, HEX);
+		if (d.type == 0 || d.type == 1) {
+			Serial.print(F("."));
+			Serial.print(src.sa.latch, HEX);
+		}
+		Serial.print(F(" "));
+		Serial.println(d.data);
 	}
 }
+#endif
 
 void CmdCli::resetInput()
 {
@@ -704,12 +794,6 @@ void serialEvent() {
 		if (inChar == 27) {
 			Serial.println();
 			CmdCli::resetInput();
-			return;
-		}
-		if (inChar == 0xE0) {
-			inChar = (char)Serial.read();
-			Serial.print("cursor ");
-			Serial.println(inChar, HEX);
 			return;
 		}
 		// if the incoming character is a newline, set a flag so the

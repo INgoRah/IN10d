@@ -4,8 +4,16 @@ Arduino 1-Wire Homeautomation Fallback
 [x] timer based control (different switch table?). Use CLI sw t <bus> <adr> <latch> <bus> <adr> <pio>.
     Default 30 secs at the moment
 [x] Host IF for switch table
+[x] Host IF for control
+
+# Bugs
+[ ] Host GPIO signal not yet verified / maybe not working
+[ ] Switch with same dst does not clear timer if running. 
+    Pressing a button to permanently switch on light is not working
 
 # TodDo
+[ ] (ongoing) Timer based on light with configurable threshold
+[ ] Custom timer time per switch
 [ ] Host IF alarm indication debugging with PI
 [ ] Host IF for status read
 
@@ -18,7 +26,15 @@ I2C slave interface for PI plus one  GPIO line for alarm indication
 Watchdog feature for PI polling to switch over to fallback Arduino soltuion
 Simple light switching matrix based on memory optimized addresses
 
-## Address format and limitations
+### Alarm handling
+Each custom DS2482 generates an alarm signal of > 800 us on the OneWire line. No
+other master supports detection of it. But this is a feature of the iButton.
+Therefore I need a master to at least monitor the line and signal it to an
+other master. The Arduino turned out to be fast and stable to handle basic
+light switches in reasonable time compared to a Linux host (threads, updates,
+script latency and overhead). So the Arduino controls the light switches.
+
+### Address format and limitations
 
 The adress scheme is aligned with the slave implementation to save space in
 the Arduino Nano and speed up the lookup. Only bus and address needs to be known

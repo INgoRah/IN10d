@@ -23,14 +23,6 @@ WireWatchdog::WireWatchdog(byte owPin)
 	this->owPin = owPin;
 }
 
-void WireWatchdog::begin()
-{
-}
-
-void WireWatchdog::end()
-{
-}
-
 void WireWatchdog::onFired( void (*function)(void) )
 {
   user_onFired = function;
@@ -39,15 +31,6 @@ void WireWatchdog::onFired( void (*function)(void) )
 void WireWatchdog::onAlarm( void (*function)(void) )
 {
   user_onAlarm = function;
-}
-
-void WireWatchdog::loop()
-{
-}
-
-bool WireWatchdog::lineRead()
-{
-	return DIRECT_READ(reg_, mask_);
 }
 
 bool WireWatchdog::alarmCheck()

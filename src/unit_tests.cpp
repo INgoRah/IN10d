@@ -20,12 +20,11 @@
 #include <Wire.h>
 #include <OneWireBase.h>
 #include <DS2482.h>
-#include <OneWire.h>
 #include "WireWatchdog.h"
 #include "TwiHost.h"
 #include "CmdCli.h"
 #include "OwDevices.h"
-#include "SwitchHandler.h"  
+#include "SwitchHandler.h"
 
 /*
  * Local constants
@@ -57,7 +56,7 @@ void testSetup() {
 
 	PCMSK1 |= (_BV(PCINT8) | _BV(PCINT9) | _BV(PCINT10) | _BV(PCINT11));
     PCIFR |= _BV(PCIF1); // clear any outstanding interrupt
-    PCICR |= _BV(PCIE1); // enable interrupt for the group	
+    PCICR |= _BV(PCIE1); // enable interrupt for the group
 }
 
 void testLoop()
@@ -69,14 +68,20 @@ void testLoop()
 int MainTest()
 {
 	static const byte latch = 6;
+	union d_adr dst;
+
 	testSetup();
 
 	dim_tbl[1].dst.da.bus = 2;
-	dim_tbl[1].dst.da.adr = 2;
+	dim_tbl[1].dst.da.adr = 7;
 	dim_tbl[1].dst.da.pio = 0;
-	dim_tbl[0].dst.da.bus = 1;
+	dim_tbl[0].dst.da.bus = 3;
 	dim_tbl[0].dst.da.adr = 3;
-	dim_tbl[0].dst.da.pio = 1;
+	dim_tbl[0].dst.da.pio = 0;
+	dst.da.bus = 2;
+	dst.da.adr = 7;
+	dst.da.pio = 0;
+	swHdl.switchLevel(dst, 50);
 
 	timed_tbl[0].src.data = 0;
 	timed_tbl[0].src.sa.bus = 1;

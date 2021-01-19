@@ -6,7 +6,7 @@
 /* per bus 12 addresses and each 5 latches, sometimes long presses additionally */
 #define MAX_SWITCHES MAX_BUS * 12 * 5
 #define MAX_TIMED_SWITCH 10
-#define MAX_DIMMER 2
+#define MAX_DIMMER 3
 
 #define HOST_ALRM_PIN 6
 
@@ -35,12 +35,13 @@ enum _pio_mode {
 	TOGGLE
 };
 
-class SwitchHandler  
+class SwitchHandler
 {
 	private:
 		OwDevices* ow;
 		OneWireBase *ds;
-		bool switchPio(union d_adr dst, enum _pio_mode mode);
+		uint8_t data[10];
+		byte mode;
 
 	public:
 
@@ -49,6 +50,9 @@ class SwitchHandler
 		void loop();
 		void initSwTable();
 		bool alarmHandler(byte busNr, byte mode);
-		bool switchHandle(uint8_t busNr, uint8_t adr1, uint8_t latch, uint8_t press, byte mode);
+		bool switchHandle(uint8_t busNr, uint8_t adr1);
+		bool switchHandle(uint8_t busNr, uint8_t adr1, uint8_t latch, uint8_t mode);
 		bool timerUpdate(union d_adr dst, uint16_t secs);
+		bool switchPio(union d_adr dst, enum _pio_mode mode);
+		bool switchLevel(union d_adr dst, uint8_t level);
 };

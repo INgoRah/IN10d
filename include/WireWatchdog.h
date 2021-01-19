@@ -31,13 +31,8 @@ class WireWatchdog
 	public:
 		WireWatchdog(byte owPin);
 		bool alarm;
-		void begin();
-		void end();
-		void loop();
 		void onFired( void (*)(void) );
 		void onAlarm( void (*)(void) );
-		void onAlarmClear( void (*)(void) );
-		bool lineRead();
 		bool alarmCheck();
 };
 
