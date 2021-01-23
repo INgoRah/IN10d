@@ -2,7 +2,7 @@
 #include "OwDevices.h"
 
 /* config */
-#define MAX_BUS 4
+#define MAX_BUS 3
 /* per bus 12 addresses and each 5 latches, sometimes long presses additionally */
 #define MAX_SWITCHES MAX_BUS * 12 * 5
 #define MAX_TIMED_SWITCH 10
@@ -42,6 +42,7 @@ class SwitchHandler
 		OneWireBase *ds;
 		uint8_t data[10];
 		byte mode;
+		uint16_t srcData(uint8_t busNr, uint8_t adr1);
 
 	public:
 

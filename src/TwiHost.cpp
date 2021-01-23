@@ -2,6 +2,7 @@
  * Library classs includes
  */
 #include <Wire.h>
+#include <main.h>
 #include <TwiHost.h>
 #include "SwitchHandler.h"
 
@@ -12,15 +13,11 @@
 #define DS2482_CMD_DATA 0x96
 
 extern TwiHost host;
+extern SwitchHandler swHdl;
 
-extern void ow_monitor();
 extern byte alarmSignal, wdFired, ledOn;
 extern unsigned long ledOnTime;
 extern unsigned long wdTime;
-extern byte mode;
-extern uint8_t min;
-extern uint8_t hour;
-extern uint8_t sun;
 
 void (*TwiHost::user_onCommand)(uint8_t, uint8_t);
 
@@ -90,6 +87,46 @@ void TwiHost::command()
 			setStatus(STAT_OK);
 		}
 		break;
+	case 0x03:
+		{
+			byte level;
+			union d_adr dst;
+			byte bus;
+
+			dst.data = 0;
+			if (debug > 2) {
+				Serial.print("rx cnt=");
+				Serial.println(rxBytes);
+			}
+			bus = Wire.read();
+			dst.da.adr = Wire.read();
+			dst.da.pio = Wire.read();
+			level = Wire.read();
+			/*I2C_READ(bus);
+			I2C_READ(dst.da.adr);
+			I2C_READ(dst.da.pio);
+			I2C_READ(level);
+			*/
+			dst.da.bus = bus;
+
+			if (dst.data == 0) {
+				Serial.println(F("invalid"));
+				host.setStatus(STAT_FAIL);
+				return;
+			}
+	#if 1
+			Serial.print(dst.da.bus);
+			Serial.print(F("."));
+			Serial.print(dst.da.adr);
+			Serial.print(F("."));
+			Serial.print(dst.da.pio);
+			Serial.print(F(" level="));
+			Serial.println(level);
+	#endif
+			swHdl.switchLevel(dst, level);
+			setStatus(STAT_OK);
+			break;
+		}
 		default:
 			if (user_onCommand)
 				user_onCommand(cmd, 0);
@@ -155,6 +192,7 @@ void TwiHost::setData(uint8_t *data, uint8_t len)
 void TwiHost::receiveEvent(int howMany) {
 	byte d;
 
+	host.rxBytes = howMany;
 	d = Wire.read();
 	switch (d)
 	{
@@ -184,16 +222,17 @@ void TwiHost::receiveEvent(int howMany) {
 		else
 			host.setStatus(STAT_NO_DATA);
 		break;
-	case 2:
-	case 3:
-	case 4:
-		// more bytes received, read in loop
-		host.setStatus(STAT_BUSY);
 	case 0x40:
 		hour = Wire.read();
 		min = Wire.read();
 		sun = Wire.read();
 		host.setStatus(STAT_OK);
+		break;
+	case 2:
+	case 3:
+	case 4:
+		// more bytes received, read in loop
+		host.setStatus(STAT_BUSY);
 	default:
 		cmd = d;
 		// handle in loop to not block status reads

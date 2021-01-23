@@ -4,12 +4,6 @@
 /*
  * Includes
  */
-#if ARDUINO >= 100
-#include "Arduino.h"			 // for delayMicroseconds, digitalPinToBitMask, etc
-#else
-#include "WProgram.h"			// for delayMicroseconds
-#include "pins_arduino.h"	// for digitalPinToBitMask, etc
-#endif
 #include <avr/sleep.h>
 #include <avr/pgmspace.h>
 #include <avr/wdt.h>
@@ -65,9 +59,8 @@ WireWatchdog wdt0(A0);
 WireWatchdog wdt1(A1);
 WireWatchdog wdt2(A2);
 WireWatchdog wdt3(A3);
-WireWatchdog* wdt[MAX_BUS] = { &wdt0, &wdt1, &wdt2, &wdt3 };
+WireWatchdog* wdt[MAX_BUS] = { &wdt0, &wdt1, &wdt2/*, &wdt3*/ };
 
-//OneWireBase* bus[3] = { &ds1, &ds1, &ds1 };
 #ifdef CLI_SUPPORT
 CmdCli cli;
 #endif
@@ -170,38 +163,6 @@ void hostCommand(uint8_t cmd, uint8_t data)
 				break;
 			}
 		}
-		host.setStatus(STAT_OK);
-		break;
-	}
-	case 0x03:
-	{
-		byte level;
-		union d_adr dst;
-		byte bus;
-
-		host.setStatus(STAT_BUSY);
-		dst.data = 0;
-		I2C_READ(bus);
-		I2C_READ(dst.da.adr);
-		I2C_READ(dst.da.pio);
-		I2C_READ(level);
-		dst.da.bus = bus;
-
-		if (dst.data == 0) {
-			Serial.println(F("invalid"));
-			host.setStatus(STAT_FAIL);
-			return;
-		}
-#if 0
-		Serial.print(dst.da.bus);
-		Serial.print(F("."));
-		Serial.print(dst.da.adr);
-		Serial.print(F("."));
-		Serial.print(dst.da.pio);
-		Serial.print(F(" level="));
-		Serial.println(level);
-#endif
-		swHdl.switchLevel(dst, level);
 		host.setStatus(STAT_OK);
 		break;
 	}
@@ -393,6 +354,9 @@ void loop()
 	}
 	if (alarmSignal) {
 		alarmPolling = millis();
+		if (debug > 2) {
+			Serial.println(F("Alarm"));
+		}
 		if (mode & MODE_ALRAM_HANDLING) {
 			byte retry;
 			for (byte i = 0; i < MAX_BUS; i++) {

@@ -1,5 +1,4 @@
-#include "Arduino.h"			 // for delayMicroseconds, digitalPinToBitMask, etc
-#include <avr/wdt.h>
+#include <main.h>
 #include "SwitchHandler.h"
 #include "OwDevices.h"
 #include <TwiHost.h>
@@ -7,11 +6,6 @@
 #define MAX_TIMER 10
 
 extern TwiHost host;
-extern byte debug;
-extern uint16_t light;
-extern uint8_t min;
-extern uint8_t hour;
-extern uint8_t sun;
 
 struct _timer_list {
 	/* timestamp of start */
@@ -199,8 +193,11 @@ static byte getVersion(byte bus, byte adr)
 /* Convert from alarm location to a lookup table format (16 bit)
  * latch - bit mask to be converted to bit number
  * press - 0: pressing, > 0: press time
+ *
+ * latch = data[2]
+ * press = data[6]
  */
-static uint16_t srcData(uint8_t busNr, uint8_t adr1, uint8_t latch, uint8_t press)
+uint16_t SwitchHandler::srcData(uint8_t busNr, uint8_t adr1)
 {
 	union s_adr src;
 	byte v;
@@ -208,19 +205,19 @@ static uint16_t srcData(uint8_t busNr, uint8_t adr1, uint8_t latch, uint8_t pres
 	src.data = 0;
 	src.sa.bus = busNr;
 	src.sa.adr =  adr1 & 0x3f;
-	src.sa.latch = bitnumber(latch);
+	src.sa.latch = bitnumber(data[2]);
 	v = getVersion(src.sa.bus, src.sa.adr);
 
-	if (v < 3 || press == 0xff)
+	if (v < 3 || data[6] == 0xff)
 		src.sa.press = 0;
 	else {
 		/* first two latches are usually output
 		* signaled from auto switch. The corresponding latch
 		* is not signaled!
 		* */
-		if (press == 0)
+		if (data[6] == 0)
 			src.sa.press = 2;
-		else if (press > (350 / 32))
+		else if (data[6] > (350 / 32))
 			src.sa.press = 1;
 		else
 			src.sa.press = 0;
@@ -238,7 +235,7 @@ static uint16_t srcData(uint8_t busNr, uint8_t adr1, uint8_t latch, uint8_t pres
 		Serial.print(F(" "));
 		if (debug > 1) {
 			Serial.print(F(" time="));
-			Serial.println(press * 32);
+			Serial.println(data[6] * 32);
 		} else
 			Serial.println();
 	}
@@ -259,8 +256,6 @@ byte dimStage(byte dim)
 	}
 	return 0;
 }
-
-extern byte light_sensor;
 
 /**
  * Called from top level control
@@ -505,7 +500,7 @@ bool SwitchHandler::switchHandle(uint8_t busNr, uint8_t adr1)
 {
 	union s_adr src;
 
-	src.data = srcData(busNr, adr1, data[2], data[6]);
+	src.data = srcData(busNr, adr1);
 	host.addEvent (0, src.data, data[1]);
 
 	// todo: signal alarm only here once the data is available
@@ -587,8 +582,10 @@ bool SwitchHandler::switchHandle(uint8_t busNr, uint8_t adr1)
 bool SwitchHandler::switchHandle(uint8_t busNr, uint8_t adr1, uint8_t latch, uint8_t mode)
 {
 	this->mode = mode;
+	/* fill data for use in switchHandle */
 	this->data[2] = latch;
 	this->data[1] = 0xff;
+	this->data[6] = 0xff;
 	return switchHandle(busNr, adr1);
 }
 
@@ -625,6 +622,7 @@ bool SwitchHandler::alarmHandler(byte busNr, byte mode)
 			return true;
 		}
 		if (adr[0] == 0x29) {
+			/* fill data for use in switchHandle */
 			if (ow->ds2408RegRead(ds, busNr, adr, data) == 0xaa);
 				switchHandle(busNr, adr[1]);
 #ifdef EXT_DEBUG

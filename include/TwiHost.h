@@ -38,7 +38,7 @@ class TwiHost
 	private:
 		byte slaveAdr;
 		uint8_t hostData[12];
-
+		byte rxBytes;
 		static void (*user_onCommand)(uint8_t cmd, uint8_t data);
 		void command();
 
