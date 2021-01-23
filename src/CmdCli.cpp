@@ -4,9 +4,9 @@
 /*
  * Includes
  */
+#include <main.h>
 #include "CmdCli.h"
 #include <avr/pgmspace.h>
-#include <avr/wdt.h>
 /*
  * Library classs includes
  */
@@ -23,8 +23,6 @@
 // cfg 7 w FF 3 FF FF FF FF FF FF FF FF FF FF FF FF FF FF 1 FF FF FE FF 1
 #define MAX_CMD_BUFSIZE 80
 
-extern byte mode;
-extern byte debug;
 extern OneWireBase *ds;
 //extern OneWireBase* bus[];
 extern WireWatchdog* wdt[MAX_BUS];
@@ -97,6 +95,10 @@ void CmdCli::begin(OwDevices* devs)
 	cmdCallback.addCmd("c", &funcCmd);		// 7
 	cmdCallback.addCmd("sw", &funcSwCmd);	// 8
 	cmdCallback.addCmd("t", &funcTemp);		// 9
+#ifdef CHGID_CMD
+	cmdCallback.addCmd("id", &funcChgId);		// 10
+#endif
+
 	//cmdCallback.addCmd("time", &funcTime);
 #ifdef EXT_DEBUG
 	cmdCallback.addCmd("pset", &funcPinSet);
@@ -272,6 +274,7 @@ void CmdCli::funcTemp(CmdParser *myParser)
 #endif
 	// channel first
 	adr[1] = me->atoh(myParser->getCmdParam(1), false);
+#if 0
 	if (adr[1] > 10) {
 		uint8_t adrt[8] = { 0x28, 0x65, 0x0E, 0xFD, 0x05, 0x00, 0x00, 0x4D };
 
@@ -282,6 +285,7 @@ void CmdCli::funcTemp(CmdParser *myParser)
 		Serial.println(F(" C"));
 		return;
 	}
+#endif
 	adr[0] = 0x28;
 	ow->adrGen(ds, curBus, adr, adr[1]);
 #if EXT_DEBUG
@@ -301,10 +305,6 @@ void CmdCli::funcTemp(CmdParser *myParser)
 	Serial.println(F(" C"));
 
 }
-
-extern byte light_sensor;
-extern uint16_t light;
-extern uint8_t sun;
 
 void CmdCli::funcMode(CmdParser *myParser)
 {
@@ -719,26 +719,6 @@ void CmdCli::funcPinGet(CmdParser *myParser)
 	Serial.print(val);
 }
 
-#if 0
-void CmdCli::funcTime(CmdParser *myParser)
-{
-	if (myParser->getParamCount() > 1) {
-		hour = atoi(myParser->getCmdParam(1));
-		min = atoi(myParser->getCmdParam(2));
-		return;
-	}
-	if (myParser->getParamCount() == 3) {
-		sun = atoi(myParser->getCmdParam(3));
-	}
-	Serial.print(hour);
-	Serial.print(F(":"));
-	Serial.print(min);
-	Serial.print(F(":"));
-	Serial.println(sec);
-
-}
-#endif
-
 #include "TwiHost.h"
 extern TwiHost host;
 
@@ -768,6 +748,77 @@ void CmdCli::funcLog(CmdParser *myParser)
 		}
 		Serial.print(F(" "));
 		Serial.println(d.data);
+	}
+}
+#endif
+
+#ifdef CHGID_CMD
+void CmdCli::funcChgId(CmdParser *myParser)
+{
+	byte id, bus, i;
+	byte adr[8];
+	byte newAdr[8];
+
+	bus = me->atoh(myParser->getCmdParam(1), false);
+	adr[1] = me->atoh(myParser->getCmdParam(2), false);
+	// first address with bus and adr
+	ow->adrGen(ds, bus, adr, adr[1]);
+	bus = me->atoh(myParser->getCmdParam(3), false);
+	id = me->atoh(myParser->getCmdParam(4), false);
+	// first address with bus and adr
+	ow->adrGen(ds, bus, newAdr, id);
+#if EXT_DEBUG
+	if (debug) {
+		int i;
+		for (i = 0; i < 7; i++) {
+			Serial.print(newAdr[i], HEX);
+			Serial.write(' ');
+		}
+		Serial.println(newAdr[i], HEX);
+	}
+#endif
+	// use current bus otherwise change wrong bus ids not working
+	ds->selectChannel(curBus);
+	ds->reset();
+	ds->select(adr);
+	// Master sendet Befehl Write-New-ID
+	ds->write (0x75);
+	// Tx	64-bit New ID	Master sendet neue ID
+	for (i = 0; i < 8; i++)
+		ds->write (newAdr[i]);
+
+	ds->reset();
+	// Tx	64-bit 1-Wire Alte-ID	Master sendet alte ID
+	ds->select(adr);
+	// Tx	0xA7	Master sendet Befehl Read-New-ID
+	ds->write (0xA7);
+	byte err = 0;
+	for (i = 0; i < 8; i++) {
+		byte d = ds->read();
+		if (d != newAdr[i]) {
+			err = 1;
+			Serial.print("!! ");
+			Serial.print(d, HEX);
+			Serial.print(" <> ");
+			Serial.println(newAdr[i], HEX);
+		} else {
+			Serial.print(d, HEX);
+			Serial.write(' ');
+		}
+	}
+	if (err == 0) {
+		Serial.println("Success");
+		ds->reset();
+		// Tx	64-bit 1-Wire Alte-ID	Master sendet alte ID
+		ds->select(adr);
+		// Tx 0x79	Master sendet Befehl Read-New-ID
+		ds->write (0x79);
+		// TxByte 2 der alten ID	Master sendet das zweite Byte der alten ID
+		ds->write (adr[1]);
+		// Tx	Byte 6 der alten ID	Master sendet das 6. Byte der alten ID
+		ds->write (adr[5]);
+		//Tx Byte 7 der alten ID	Master sendet das 7. Byte der alten ID
+		ds->write (adr[6]);
 	}
 }
 #endif
