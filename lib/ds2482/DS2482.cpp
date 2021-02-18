@@ -106,54 +106,26 @@ bool DS2482::configureDev(uint8_t config)
 	Wire.write(0xd2);
 	Wire.write(config | (~config)<<4);
 	end();
-	
+
 	return _read() == config;
 }
 
+// channel must be between 0 and 7
 bool DS2482::selectChannel(uint8_t channel)
 {
-	const byte R_chan[8] = { 0xB8, 0xB1, 0xAA, 0xA3, 0x9C, 0x95, 0x8E, 0x87 };
-	uint8_t ch;
-
-	switch (channel)
-	{
-		case 0:
-		default:
-			ch = 0xf0;
-			break;
-		case 1:
-			ch = 0xe1;
-			break;
-		case 2:
-			ch = 0xd2;
-			break;
-		case 3:
-			ch = 0xc3;
-			break;
-		case 4:
-			ch = 0xb4;
-			break;
-		case 5:
-			ch = 0xa5;
-			break;
-		case 6:
-			ch = 0x96;
-			break;
-		case 7:
-			ch = 0x87;
-			break;
-	};
+	static const byte chan_r[8] = { 0xB8, 0xB1, 0xAA, 0xA3, 0x9C, 0x95, 0x8E, 0x87 };
+	static const byte chan_w[8] = { 0xF0, 0xE1, 0xD2, 0xC3, 0xB4, 0xA5, 0x96, 0x87 };
 
 	busyWait(true);
 	begin();
 	Wire.write(0xc3);
-	Wire.write(ch);
+	Wire.write(chan_w[channel]);
 	end();
 	busyWait();
 
 	uint8_t check = _read();
- 
-	return check == R_chan[ch];
+
+	return check == chan_r[channel];
 }
 
 bool DS2482::reset()
@@ -255,9 +227,7 @@ bool DS2482::search(uint8_t *newAddr, bool search_mode)
 	{
 		int romByte = (i-1)>>3;
 		int romBit = 1<<((i-1)&7);
-#ifdef DEBUG
-		Serial.print(".");
-#endif		
+
 		if (i < searchLastDisrepancy)
 			direction = searchAddress[romByte] & romBit;
 		else
@@ -265,7 +235,6 @@ bool DS2482::search(uint8_t *newAddr, bool search_mode)
 
 		busyWait();
 		if (status == stTimeout) {
-			Serial.println("Search Timeout");
 			return false;
 		}
 		begin();
@@ -274,7 +243,6 @@ bool DS2482::search(uint8_t *newAddr, bool search_mode)
 		end();
 		stat = busyWait();
 		if (status == stTimeout) {
-			Serial.println("Search Timeout");
 			return false;
 		}
 
@@ -307,9 +275,6 @@ bool DS2482::search(uint8_t *newAddr, bool search_mode)
 	for (i=0;i<8;i++)
 		newAddr[i] = searchAddress[i];
 
-#ifdef DEBUG
-	Serial.println();
-#endif
 	return true;
 }
 #endif

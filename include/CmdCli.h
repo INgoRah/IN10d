@@ -5,10 +5,17 @@
 #include <CmdParser.hpp>
 #include "OwDevices.h"
 
+#define CLI_NR_BASE 10
+#ifdef EXT_DEBUG
+#define CLI_NR CLI_NR_BASE + 3
+#else
+#define CLI_NR CLI_NR_BASE
+#endif
+
 class CmdCli
 {
 	private:
-		CmdCallback<12> cmdCallback;
+		CmdCallback<CLI_NR> cmdCallback;
 		CmdParser cmdParser;
 		/**
 		 * /param prefix check for existing prefix '0x' for hex or dec
@@ -17,18 +24,23 @@ class CmdCli
 		void dumpSwTbl(void);
 
 		static void funcBus(CmdParser *myParser);
-		static void funcAlarmSrch(CmdParser *myParser);
-		static void funcPinSet(CmdParser *myParser);
 		static void funcMode(CmdParser *myParser);
-		static void funcTest(CmdParser *myParser);
-		static void funcData(CmdParser *myParser);
 		static void funcPio(CmdParser *myParser);
 		static void funcStatus(CmdParser *myParser);
-		static void funcSearch(CmdParser *myParser);
+		static void funcSearch(CmdParser *myParser); /* 5 */
 		static void funcCfg(CmdParser *myParser);
-		static void funcCmd(CmdParser *myParser);
+		static void funcCmd(CmdParser *myParser); /* 7 */
 		static void funcSwCmd(CmdParser *myParser);
-		static void funcTemp(CmdParser *myParser);
+		static void funcTemp(CmdParser *myParser); /* 9 */
+#ifdef CHGID_CMD
+		static void funcChgId(CmdParser *myParser); /* 10 */
+#endif
+		//static void funcTime(CmdParser *myParser);
+#ifdef EXT_DEBUG
+		static void funcPinSet(CmdParser *myParser);
+		static void funcPinGet(CmdParser *myParser);
+		static void funcLog(CmdParser *myParser);
+#endif
 
 public:
 	CmdCli() {;}
