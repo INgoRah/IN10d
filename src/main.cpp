@@ -345,13 +345,18 @@ void loop()
 	if (ledOnTime != 0 && !alarmSignal) {
 		ledBlink();
 	}
-	swHdl.loop();
 	if (pinSignal) {
 		// interrupt to host
 		digitalWrite (HOST_ALRM_PIN, LOW);
 		swHdl.switchHandle(0, 9, 1, mode);
 		pinSignal = 0;
 	}
+	/* if there is any host data transfer, avoid conflicts on the I2C bus
+	 * and skip handling - transfer should be finished very quickly
+	if (host.getStatus() == STAT_BUSY)
+		return;
+	 */
+	swHdl.loop();
 	if (alarmSignal) {
 		alarmPolling = millis();
 		if (debug > 2) {

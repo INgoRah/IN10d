@@ -39,6 +39,7 @@ class TwiHost
 		byte slaveAdr;
 		uint8_t hostData[12];
 		byte rxBytes;
+		uint8_t status;
 		static void (*user_onCommand)(uint8_t cmd, uint8_t data);
 		void command();
 
@@ -47,10 +48,12 @@ class TwiHost
 
 public:
 	CircularBuffer<struct logData, 10> events;
+	bool busy;
 
 	TwiHost(byte slaveAdr);
-	static void setReg(uint8_t _reg);
-	static void setStatus(uint8_t stat);
+	/*static void setReg(uint8_t _reg);*/
+	void setStatus(uint8_t stat);
+	uint8_t getStatus() { return status; };
 	static void setData(uint8_t *data, uint8_t len);
 	void addEvent(uint8_t type, uint16_t source, uint16_t data = 0);
 	void addEvent(uint8_t type, uint8_t bus, uint8_t adr, uint16_t data);

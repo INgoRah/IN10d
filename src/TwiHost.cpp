@@ -22,14 +22,11 @@ extern unsigned long wdTime;
 void (*TwiHost::user_onCommand)(uint8_t, uint8_t);
 
 // cache the last read byte on 1W bus
-//static uint8_t rdData[16];
 static uint8_t* rdData = NULL;
 static uint8_t rdLen, rdPos;
 uint8_t cmd = 0xFF;
 // registers
-byte cfg, ch;
 static uint8_t reg;
-static byte status;
 
 TwiHost::TwiHost(byte slaveAdr)
 {
@@ -40,6 +37,7 @@ void TwiHost::begin()
 {
 	cmd = 0xff;
 	rdLen = 0;
+	busy = false;
 	Wire.begin(slaveAdr);
 	Wire.onReceive(receiveEvent);
 	Wire.onRequest(requestEvent);
@@ -54,10 +52,12 @@ void TwiHost::onCommand( void (*function)(uint8_t, uint8_t) )
   user_onCommand = function;
 }
 
+/*
 void TwiHost::setReg(uint8_t _reg)
 {
 	reg = _reg;
 }
+*/
 
 void TwiHost::setStatus(uint8_t stat)
 {
@@ -85,7 +85,8 @@ void TwiHost::command()
 			hostData[6] = d.data & 0xff;
 			setData((uint8_t*)hostData, 7);
 			setStatus(STAT_OK);
-		}
+		} else
+			host.setStatus(STAT_NO_DATA);
 		break;
 	case 0x03:
 		{
@@ -128,8 +129,11 @@ void TwiHost::command()
 			break;
 		}
 		default:
-			if (user_onCommand)
+			if (user_onCommand) {
 				user_onCommand(cmd, 0);
+				if (status == STAT_BUSY)
+					setStatus(STAT_OK);
+			}
 			break;
 	}
 }
@@ -137,7 +141,7 @@ void TwiHost::command()
 void TwiHost::loop()
 {
 	if (cmd != 0xff) {
-		host.command();
+		command();
 		// mark as handled
 		cmd = 0xff;
 	}
@@ -192,7 +196,9 @@ void TwiHost::setData(uint8_t *data, uint8_t len)
 void TwiHost::receiveEvent(int howMany) {
 	byte d;
 
-	host.rxBytes = howMany;
+	// got how many bytes - the one we read here
+	host.rxBytes = howMany - 1;
+	/* assert if not at least 1? */
 	d = Wire.read();
 	switch (d)
 	{
@@ -205,14 +211,21 @@ void TwiHost::receiveEvent(int howMany) {
 		break;
 	case DS2482_CMD_SET_READ_PTR:
 		reg = Wire.read();
+		host.rxBytes--;
 		break;
 	case DS2482_CMD_DATA:
+		// host will request data, so just set the register
 		reg = DS2482_DATA_REGISTER;
 		rdPos = 0;
-		//Wire.write(rdData, rdLen);
+		/* Preparing data is not working, cause counter reset before
+		 * calling requestEvent.
+		 * Flag host busy?
+		*/
+		host.setStatus(STAT_BUSY);
 		break;
 	case DS2482_CMD_MODE:
 		mode = Wire.read();
+		host.rxBytes--;
 		break;
 	case 1: // get event data
 		if (host.events.size() > 0) {
@@ -227,6 +240,7 @@ void TwiHost::receiveEvent(int howMany) {
 		min = Wire.read();
 		sun = Wire.read();
 		host.setStatus(STAT_OK);
+		host.rxBytes -= 3;
 		break;
 	case 2:
 	case 3:
@@ -249,11 +263,17 @@ void TwiHost::requestEvent() {
 		Wire.write(mode);
 		break;
 	case DS2482_STATUS_REGISTER:
-		Wire.write(status);
+		Wire.write(host.getStatus());
 		break;
 	case DS2482_DATA_REGISTER:
-		if (rdPos < rdLen && rdData != NULL)
-			Wire.write(rdData[rdPos++]);
+		/* instead write bulk of data should be possible ... */
+		if (rdPos < rdLen && rdData != NULL) {
+			Wire.write(rdData, rdLen);
+			rdPos = rdLen;
+			//Wire.write(rdData[rdPos++]);
+			//if (rdPos == rdLen)
+			host.setStatus(STAT_OK);
+		}
 		else {
 			host.setStatus(STAT_NO_DATA);
 			Wire.write(0xff);
