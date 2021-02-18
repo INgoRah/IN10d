@@ -372,8 +372,6 @@ void CmdCli::funcCfg(CmdParser *myParser)
 	if (*c == 's') {
 		Serial.print(F("Cfg save ("));
 		len = ow->ds2408CfgRead(ds, curBus, adr, data);
-		data[21] = 0x55;
-		len = 24;
 		ow->ds2408CfgWrite(ds, curBus, adr, data, len);
 		Serial.print(len);
 		Serial.print(F(")"));

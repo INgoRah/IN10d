@@ -139,7 +139,7 @@ void SwitchHandler::loop()
 			}
 #endif
 			/* action with dst */
-			switchPio(tmr->dst, OFF);
+			switchLevel(tmr->dst, 0);
 		}
 	}
 }
@@ -257,40 +257,59 @@ byte dimStage(byte dim)
 	return 0;
 }
 
-/**
- * Called from top level control
- * level 0 .. 100 will be translated in 16 stages. If level < 16
- *       directly switch off
- * */
-bool SwitchHandler::switchLevel(union d_adr dst, uint8_t level)
+uint8_t getType(union d_adr dst)
 {
-	byte pio, retry, d;
-	byte adr[8], bus, type = 0;
+	if (dst.da.bus == 0 && dst.da.adr == 9 && dst.da.pio == 0) {
+		return 2;
+	}
+	return 0;
+}
+
+byte SwitchHandler::dataRead(union d_adr dst, uint8_t adr[8])
+{
+	uint8_t d;
+
+	if (getType(dst) != 0)
+		return 0;
+	ow->adrGen(ds, dst.da.bus, adr, dst.da.adr);
+	d = ow->ds2408PioGet(ds, dst.da.bus, adr);
+#ifdef EXT_DEBUG
+	if (debug > 2) {
+		Serial.print(F(" ("));
+		Serial.print(d, HEX);
+		Serial.print(F(") "));
+	}
+#endif
+
+	return d;
+}
+
+/**
+ * low level set the level for supporting PIOs
+ *
+ * @param id id in dimLevel cache array
+ * @param d data read from PIO before
+ */
+bool SwitchHandler::setLevel(union d_adr dst, uint8_t level, byte adr[8], uint8_t id, byte d)
+{
 	byte dim;
-	uint8_t id;
+	byte retry;
+
+	if (id == 0xff)
+		return false;
 
 	dim = dimLevel(dst, &id);
-	if (level < 16 || (dim == 0xff && level == 0))
-		return switchPio(dst, OFF);
-	if (level == 100 || (dim == 0xff && level != 0))
-		return switchPio(dst, ON);
+	if (dim != 0)
+		/* was on before, don't start timer */
+		return false;
 
-	bus = dst.da.bus;
-	pio = 1 << dst.da.pio;
-	if (bus == 0 && dst.da.adr == 9 && pio == 1) {
-		type = 2;
-		d = 0;
-	} else
-		// type 0:
-		ow->adrGen(ds, bus, adr, dst.da.adr);
-
-	switch (type) {
+	switch (getType(dst)) {
 	case 0:
+	default:
 		dim = level * 16 / 100;
-		d = ow->ds2408PioGet(ds, bus, adr);
 #ifdef EXT_DEBUG
 		if (debug > 1) {
-			Serial.print(bus);
+			Serial.print(dst.da.bus);
 			Serial.print(F("."));
 			Serial.print(adr[1]);
 			Serial.print(F(" = "));
@@ -299,10 +318,10 @@ bool SwitchHandler::switchLevel(union d_adr dst, uint8_t level)
 #endif
 		// clear level in data
 		d &= 0xF;
-		d |= (dim << 4) | pio;
+		d |= (dim << 4) | (1 << dst.da.pio);
 		retry = 5;
 		do {
-			d = ow->ds2408PioSet(ds, bus, adr, d);
+			d = ow->ds2408PioSet(ds, dst.da.bus, adr, d);
 			if (d == 0xAA)
 				break;
 		} while (retry-- > 0);
@@ -314,7 +333,7 @@ bool SwitchHandler::switchLevel(union d_adr dst, uint8_t level)
 #endif
 		break;
 	case 2:
-		if (bus == 0 && dst.da.adr == 9 && pio == 1) {
+		if (dst.da.bus == 0 && dst.da.adr == 9 && dst.da.pio == 0) {
 			dim = level * 255 / 100;
 			analogWrite(5, level * 255 / 100);
 		}
@@ -324,6 +343,44 @@ bool SwitchHandler::switchLevel(union d_adr dst, uint8_t level)
 	host.addEvent (dst, dim);
 
 	return true;
+}
+
+
+/**
+ * low level set the PIO on or off
+ *
+ * @param id id in dimLevel cache array
+ * @param d data read from PIO before
+ */
+bool SwitchHandler::setPio(union d_adr dst, enum _pio_mode mode)
+{
+
+}
+
+/**
+ * Called from top level control to switch to a dedicated level or
+ * simply on or off.
+ * If set already it will ignore and return false
+ * level 0 .. 100 will be translated in 16 stages. If level < 16
+ *       directly switch off
+ * */
+bool SwitchHandler::switchLevel(union d_adr dst, uint8_t level)
+{
+	byte d;
+	byte adr[8];
+	uint8_t id;
+
+	dimLevel(dst, &id);
+	d = dataRead(dst, adr);
+
+	if (level < 16 || (id == 0xff && level == 0))
+		return switchPio(dst, OFF);
+	if (level == 100 || (id == 0xff && level != 0))
+		return switchPio(dst, ON);
+	/* check if need to change if a forced switch on, avoid
+	 * switching off by timer
+	 * or force mode */
+	return setLevel(dst, level, adr, id, d);
 }
 
 /**
@@ -336,29 +393,22 @@ bool SwitchHandler::switchLevel(union d_adr dst, uint8_t level)
 bool SwitchHandler::switchPio(union d_adr dst, enum _pio_mode mode = TOGGLE)
 {
 	byte pio, retry, d;
-	byte adr[8], bus, type;
+	byte adr[8], type;
 	byte dim;
 	uint8_t id, r;
 
-	bus = dst.da.bus;
 #ifdef DEBUG
 	if (debug > 1) {
-		Serial.print(bus);
+		Serial.print(dst.da.bus);
 		Serial.print(".");
 		Serial.print(dst.da.adr);
 		Serial.print(".");
 		Serial.print(dst.da.pio);
 	}
 #endif
+	// cache pio
 	pio = 1 << dst.da.pio;
-	if (bus == 0 && dst.da.adr == 9 && pio == 1) {
-		type = 2;
-		d = 0;
-	} else {
-		type = 0;
-		ow->adrGen(ds, bus, adr, dst.da.adr);
-		d = ow->ds2408PioGet(ds, bus, adr);
-	}
+	d = dataRead(dst, adr);
 #if 0
 	// type 1:
 	static uint8_t target[8] = { 0x3A, 0x01, 0xDA, 0x84, 0x00, 0x00, 0x05, 0xA3 };
@@ -368,6 +418,9 @@ bool SwitchHandler::switchPio(union d_adr dst, enum _pio_mode mode = TOGGLE)
 	// only for the ow slaves of type ds2408 (custom)
 	switch (mode) {
 		case ON:
+			if (dim != 0xFF && dim != 0)
+				/* was on before, don't start timer */
+				return false;
 			/* timer mode or force */
 			if (dim != 0xFF) {
 				dim = 15;
@@ -376,20 +429,8 @@ bool SwitchHandler::switchPio(union d_adr dst, enum _pio_mode mode = TOGGLE)
 				d &= 0xF;
 				d |= (dim << 4) | pio;
 			} else {
-#ifdef EXT_DEBUG
-				if (debug > 2) {
-					Serial.print(F(" ("));
-					Serial.print(d, HEX);
-					Serial.print(F(") "));
-				}
-#endif
-				if ((d & pio) == 0) {
+				if ((d & pio) == 0)
 					return false;
-				}
-#ifdef EXT_DEBUG
-				if (debug > 1)
-					Serial.print(F(" ON"));
-#endif
 				d &= ~(pio);
 			}
 			/* check for light at the light sensor ...
@@ -403,20 +444,9 @@ bool SwitchHandler::switchPio(union d_adr dst, enum _pio_mode mode = TOGGLE)
 				dim_tbl[id].lvl.level = 0;
 				dim = 0;
 			} else {
-#ifdef EXT_DEBUG
-				if (debug > 2) {
-					Serial.print(F(" ("));
-					Serial.print(d, HEX);
-					Serial.print(F(") "));
-				}
-#endif
-				if (d & pio) {
+				/* already off */
+				if (d & pio)
 					return false;
-				}
-#ifdef EXT_DEBUG
-				if (debug > 1)
-					Serial.print(F(" OFF"));
-#endif
 				d |= pio;
 			}
 			/* check for light at the light sensor ...
@@ -434,24 +464,13 @@ bool SwitchHandler::switchPio(union d_adr dst, enum _pio_mode mode = TOGGLE)
 					d &= ~(pio);
 				else
 					d |= (dim << 4) | pio;
-			}
-			else {
-				if (d & pio) {
+			} else {
+				if (d & pio)
 					d &= ~(pio);
-#ifdef EXT_DEBUG
-					if (debug > 1)
-						Serial.print(F(" ON"));
-#endif
-				}
-				else {
+				else
 					/* todo: check for tiner, first press will
 						just stop the timer */
 					d |= pio;
-#ifdef EXT_DEBUG
-					if (debug > 1)
-						Serial.print(F(" OFF"));
-#endif
-				}
 			}
 			/* check for light at the light sensor ...
 				bus == 0, adr == 1, pio = 1
@@ -463,12 +482,18 @@ bool SwitchHandler::switchPio(union d_adr dst, enum _pio_mode mode = TOGGLE)
 			break;
 	}
 	/* special case: our own pin */
-	if (type == 2) {
+	if (getType(dst) == 2) {
 		analogWrite(5, dim * 15);
 		host.addEvent (dst, dim);
 		return true;
 	}
 #ifdef EXT_DEBUG
+	if (debug > 1 && id == 0xff) {
+		if (d & pio)
+			Serial.print(F(" OFF"));
+		else
+			Serial.print(F(" ON"));
+	}
 	if (debug > 1) {
 		Serial.print(F(" -> "));
 		Serial.print(d, HEX);
@@ -477,7 +502,7 @@ bool SwitchHandler::switchPio(union d_adr dst, enum _pio_mode mode = TOGGLE)
 	retry = 5;
 	do {
 		wdt_reset();
-		r = ow->ds2408PioSet(ds, bus, adr, d);
+		r = ow->ds2408PioSet(ds, dst.da.bus, adr, d);
 		if (r == 0xAA)
 			break;
 	} while (retry-- > 0);
@@ -535,6 +560,7 @@ bool SwitchHandler::switchHandle(uint8_t busNr, uint8_t adr1)
 				bool ret;
 
 				/* default action: switch on and start timer for off */
+				// ret = switchLevel(timed_tbl[i].dst, ...)
 				ret = switchPio(timed_tbl[i].dst, ON);
 				if (ret)
 					/*  if on/timer running: reset timer or start timer */
@@ -571,7 +597,18 @@ bool SwitchHandler::switchHandle(uint8_t busNr, uint8_t adr1)
 				}
 			}
 			if (do_sw)
-				/* toggle pio */
+				/* toggle io */
+#if 0
+				byte adr[8], type, d;
+
+				d = dataRead(dst, &type, adr);
+				dim = dimLevel(dst, &id);
+				if (id != 0xff)
+					// toggle level
+#endif
+				// read out data and check whether needed
+				// check if we have a level based toggle
+				// toggle pio or toggle level ?
 				switchPio(sw_tbl[i].dst);
 		}
 	}

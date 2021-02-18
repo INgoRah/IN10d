@@ -43,6 +43,7 @@ class SwitchHandler
 		uint8_t data[10];
 		byte mode;
 		uint16_t srcData(uint8_t busNr, uint8_t adr1);
+		byte dataRead(union d_adr dst, uint8_t adr[8]);
 
 	public:
 
@@ -56,4 +57,5 @@ class SwitchHandler
 		bool timerUpdate(union d_adr dst, uint16_t secs);
 		bool switchPio(union d_adr dst, enum _pio_mode mode);
 		bool switchLevel(union d_adr dst, uint8_t level);
+		bool setLevel(union d_adr dst, uint8_t level, byte adr[8], uint8_t id, byte d);
 };
