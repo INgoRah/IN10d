@@ -44,23 +44,23 @@ union d_adr {
 class OwDevices
 {
 	private:
-
+		OneWireBase *ow;
 	public:
 		OwDevices() {;}
 		void begin(OneWireBase *ds);
 
-		void adrGen(OneWireBase *ds, byte bus, byte adr[8], uint8_t id);
-		uint8_t ds2408LatchReset(OneWireBase *ds, uint8_t* addr);
-		uint8_t ds2408RegRead(OneWireBase *ds, byte bus, uint8_t* addr, uint8_t* data, bool latch_reset = true);
-		uint8_t ds2408ChWrite(OneWireBase *ds, byte bus, uint8_t* addr, uint8_t* data, int cnt);
-		void toggleDs2413(OneWireBase *ds, byte bus, uint8_t* addr);
-		uint8_t ds2408PioGet(OneWireBase *ds, byte bus, uint8_t* addr);
-		uint8_t ds2408PioSet(OneWireBase *ds, byte bus, uint8_t* addr, uint8_t pio);
-		uint8_t ds2408TogglePio(OneWireBase *ds, byte bus, uint8_t* addr, uint8_t pio, uint8_t* data = NULL);
-		void ds2408CfgWrite(OneWireBase *ds, byte bus, byte adr[8], uint8_t* d, uint8_t len);
-		int ds2408CfgRead(OneWireBase *ds, byte bus, byte adr[8], uint8_t* data);
-		uint16_t tempRead(OneWireBase *ds, byte busNr, byte addr[8], byte mode = 2);
-		int search(OneWireBase *ds, byte bus);
+		void adrGen(byte bus, byte adr[8], uint8_t id);
+		uint8_t ds2408LatchReset(uint8_t* addr);
+		uint8_t ds2408RegRead(byte bus, uint8_t* addr, uint8_t* data, bool latch_reset = true);
+		uint8_t ds2408ChWrite(byte bus, uint8_t* addr, uint8_t* data, int cnt);
+		void toggleDs2413(byte bus, uint8_t* addr);
+		uint8_t ds2408PioGet(byte bus, uint8_t* addr);
+		uint8_t ds2408PioSet(byte bus, uint8_t* addr, uint8_t pio);
+		uint8_t ds2408TogglePio(byte bus, uint8_t* addr, uint8_t pio, uint8_t* data = NULL);
+		void ds2408CfgWrite(byte bus, byte adr[8], uint8_t* d, uint8_t len);
+		int ds2408CfgRead(byte bus, byte adr[8], uint8_t* data);
+		uint16_t tempRead(byte busNr, byte addr[8], byte mode = 2);
+		int search(byte bus);
 };
 
 #endif

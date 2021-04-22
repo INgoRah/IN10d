@@ -6,11 +6,12 @@
  */
 #include "Arduino.h"			 // for delayMicroseconds, digitalPinToBitMask, etc
 #include <avr/pgmspace.h>
+#include <avr/wdt.h>
 #include "DS2482.h"
 #include "OwDevices.h"
 
 /*
- * Library classs includes
+ * Library class includes
  */
 
 /*
@@ -25,7 +26,11 @@
 #define HIGH_ALARM_TEMP 2
 #define LOW_ALARM_TEMP  3
 
-void adrGen(OneWireBase *ds, byte adr[8], uint8_t id);
+#if defined(AVRSIM)
+uint8_t	pio_data[0x0f];
+#endif
+
+void adrGen(byte adr[8], uint8_t id);
 
 /*
  * Objects
@@ -40,11 +45,12 @@ void adrGen(OneWireBase *ds, byte adr[8], uint8_t id);
 */
 void OwDevices::begin(OneWireBase *ds)
 {
-	ds->resetDev();
-	ds->configureDev(DS2482_CONFIG_APU);
+	ow = ds;
+	ow->resetDev();
+	ow->configureDev(DS2482_CONFIG_APU);
 }
 
-void OwDevices::adrGen(OneWireBase *ds, uint8_t bus, uint8_t adr[8], uint8_t id)
+void OwDevices::adrGen(uint8_t bus, uint8_t adr[8], uint8_t id)
 {
 	adr[1] = id; // id selector
 	adr[2] = bus;
@@ -56,7 +62,7 @@ void OwDevices::adrGen(OneWireBase *ds, uint8_t bus, uint8_t adr[8], uint8_t id)
 	}
 	adr[5] = 0x66;
 	adr[6] = 0x77;
-	adr[7] = ds->crc8 (adr, 7);
+	adr[7] = ow->crc8 (adr, 7);
 #if 0
 	int i;
 	for (i = 0; i < 7; i++) {
@@ -67,18 +73,18 @@ void OwDevices::adrGen(OneWireBase *ds, uint8_t bus, uint8_t adr[8], uint8_t id)
 #endif
 }
 
-int OwDevices::search(OneWireBase *ds, byte bus)
+int OwDevices::search(byte bus)
 {
 	byte adr[8];
 	byte j = 0;
 
-	ds->selectChannel(bus);
-	ds->reset_search();
-	if (ds->reset() == 0) {
+	ow->selectChannel(bus);
+	ow->reset_search();
+	if (ow->reset() == 0) {
 		return -1;
 	}
 
-	while (ds->search(adr)) {
+	while (ow->search(adr)) {
 		Serial.print(F("#"));
 		Serial.print(j++);
 		Serial.print(F(":"));
@@ -93,7 +99,7 @@ int OwDevices::search(OneWireBase *ds, byte bus)
 }
 
 /* requires bus selected already before */
-uint8_t OwDevices::ds2408LatchReset(OneWireBase *ds, uint8_t* addr)
+uint8_t OwDevices::ds2408LatchReset(uint8_t* addr)
 {
 	uint8_t retry;
 	uint8_t tmp;
@@ -103,10 +109,10 @@ uint8_t OwDevices::ds2408LatchReset(OneWireBase *ds, uint8_t* addr)
 #endif
 	retry = 5;
 	do {
-		ds->reset();
-		ds->select(addr);
-		ds->write (0xC3);
-		tmp = ds->read();
+		ow->reset();
+		ow->select(addr);
+		ow->write (0xC3);
+		tmp = ow->read();
 		if (tmp == 0xAA)
 			break;
 	} while (retry-- > 0);
@@ -124,7 +130,7 @@ uint8_t OwDevices::ds2408LatchReset(OneWireBase *ds, uint8_t* addr)
  * [6] Status ext 1, used for press time detection
  * [7] Status ext 2
  * */
-uint8_t OwDevices::ds2408RegRead(OneWireBase *ds, byte bus, uint8_t* addr, uint8_t* data, bool latch_reset)
+uint8_t OwDevices::ds2408RegRead(byte bus, uint8_t* addr, uint8_t* data, bool latch_reset)
 {
 	uint8_t tmp;
 	uint8_t buf[3];  // Put everything in the buffer so we can compute CRC easily.
@@ -136,17 +142,17 @@ uint8_t OwDevices::ds2408RegRead(OneWireBase *ds, byte bus, uint8_t* addr, uint8
 	uint8_t retry = REG_RETRY;
 	do {
 		/* read latch */
-		ds->selectChannel(bus);
-		ds->reset();
-		ds->select(addr);
+		ow->selectChannel(bus);
+		ow->reset();
+		ow->select(addr);
 		// read data registers
 		buf[0] = 0xF0;    // Read PIO Registers
 		buf[1] = 0x88;    // LSB address
 		buf[2] = 0x00;    // MSB address
-		ds->write (buf, 3);
+		ow->write (buf, 3);
 		// 3 cmd bytes, 6 data bytes, 2 0xFF, 2 CRC16
 		// 1:
-		ds->read (data, 10);
+		ow->read (data, 10);
 		/* check for valid status register */
 		if (data[5] != 0xff)
 			break;
@@ -156,29 +162,25 @@ uint8_t OwDevices::ds2408RegRead(OneWireBase *ds, byte bus, uint8_t* addr, uint8
 	if (!latch_reset)
 		return 0xaa;
 
-	tmp = ds2408LatchReset(ds, addr);
+	tmp = ds2408LatchReset(addr);
 	if (tmp != 0xAA)
 		Serial.println(F("latch reset error"));
 
 	return tmp;
 }
 
-uint8_t OwDevices::ds2408ChWrite(OneWireBase *ds, byte bus, uint8_t* addr, uint8_t* data, int cnt)
+uint8_t OwDevices::ds2408ChWrite(byte bus, uint8_t* addr, uint8_t* data, int cnt)
 {
 	uint8_t r;
 	int i;
 
-	ds->selectChannel(bus);
-	ds->reset();
-	ds->select(addr);
-	ds->write (0x5A);
-	Serial.print(F("data"));
+	ow->selectChannel(bus);
+	ow->reset();
+	ow->select(addr);
+	ow->write (0x5A);
 	for (i = 0; i < cnt; i++) {
-		Serial.print(F(" "));
-		Serial.print(data[i], HEX);
-		Serial.print(F(" "));
-		ds->write (data[i]);
-		r = ds->read();
+		ow->write (data[i]);
+		r = ow->read();
 		if (r != 0xAA) {
 			// should be data[i] ... but the implementation seems wrong
 			Serial.print(r, HEX);
@@ -188,17 +190,17 @@ uint8_t OwDevices::ds2408ChWrite(OneWireBase *ds, byte bus, uint8_t* addr, uint8
 	return 0xaa;
 }
 
-void OwDevices::toggleDs2413(OneWireBase *ds, byte bus, uint8_t* addr)
+void OwDevices::toggleDs2413(byte bus, uint8_t* addr)
 {
 	unsigned char pio, pion;
 	int cnt = 10;
 
-	ds->selectChannel(bus);
+	ow->selectChannel(bus);
 	do {
-		ds->reset();
-		ds->select(addr);
-		ds->write (0xF5);
-		pio = ds->read();
+		ow->reset();
+		ow->select(addr);
+		ow->write (0xF5);
+		pio = ow->read();
 		if (cnt-- == 0)
 			return;
 	} while (((pio & 0xF) != (~(pio >> 4) & 0xF)));
@@ -209,58 +211,81 @@ void OwDevices::toggleDs2413(OneWireBase *ds, byte bus, uint8_t* addr)
 	pion |= 0x2;
 	cnt = 10;
 	do {
-		ds->reset();
-		ds->select(addr);
-		ds->write (0x5A);
-		ds->write (0xFC | pion);
-		ds->write (0xFF & (~(0xFC | pion)));
-		pio = ds->read();
+		ow->reset();
+		ow->select(addr);
+		ow->write (0x5A);
+		ow->write (0xFC | pion);
+		ow->write (0xFF & (~(0xFC | pion)));
+		pio = ow->read();
 		if (cnt-- == 0)
 			return;
 	} while (pio != 0xAA);
 }
 
-uint8_t OwDevices::ds2408PioGet(OneWireBase *ds, byte bus, uint8_t* addr)
+/* TODO make sure, that the data is correct ... how? */
+uint8_t OwDevices::ds2408PioGet(byte bus, uint8_t* addr)
 {
 	uint8_t pio;
-	uint8_t buf[3];
 
 #if defined(AVRSIM)
-	return 0x56;
+	return pio_data[addr[1] & 0x0f];
 #endif
-	ds->selectChannel(bus);
-	ds->reset();
-	ds->select(addr);
+#if 1
+	uint8_t res, d[10];
+
+	res = ds2408RegRead(bus, addr, d, false);
+	if (res != 0xaa) {
+		Serial.print("Read error: ");
+		Serial.println(res, HEX);
+	}
+
+	return d[1];
+#else
+	uint8_t buf[3];
+
+	ow->selectChannel(bus);
+	ow->reset();
+	ow->select(addr);
 	// read data registers
 	buf[0] = 0xF0;    // Read PIO Registers
 	buf[1] = 0x89;    // LSB address
 	buf[2] = 0x00;    // MSB address
-	ds->write (buf, 3);
-	pio = ds->read();
+	ow->write (buf, 3);
+	pio = ow->read();
 
 	return pio;
+#endif
 }
 
-uint8_t OwDevices::ds2408PioSet(OneWireBase *ds, byte bus, uint8_t* addr, uint8_t pio)
+uint8_t OwDevices::ds2408PioSet(byte bus, uint8_t* addr, uint8_t pio)
 {
 #if defined(AVRSIM)
+	pio_data[addr[1] & 0x0f] = pio;
 	return 0xAA;
 #else
-	uint8_t r;
+	uint8_t r, retry;
 
-	ds->selectChannel(bus);
-	ds->reset();
-	ds->select(addr);
-	ds->write (0x5A);
-	ds->write (pio);
-	ds->write (0xFF & ~(pio));
-	r = ds->read();
+	ow->selectChannel(bus);
+	retry = 5;
+	do {
+		wdt_reset();
+		ow->reset();
+		ow->select(addr);
+		ow->write (0x5A);
+		ow->write (pio);
+		ow->write (0xFF & ~(pio));
+		r = ow->read();
+
+		if (r == 0xAA)
+			break;
+	} while (retry-- > 0);
+
 	if (r != 0xAA) {
 		Serial.print(F("data "));
 		Serial.print(pio, HEX);
 		Serial.println(F(" write error"));
 	} else
-		ds2408LatchReset(ds, addr);
+		ds2408LatchReset(addr);
 
 	return r;
 #endif
@@ -270,12 +295,12 @@ uint8_t OwDevices::ds2408PioSet(OneWireBase *ds, byte bus, uint8_t* addr, uint8_
  * pio - bit mask of the PIO
  * data - optional data from a read before, avoid reading again
  * */
-uint8_t OwDevices::ds2408TogglePio(OneWireBase *ds, byte bus, uint8_t* addr, uint8_t pio, uint8_t* data)
+uint8_t OwDevices::ds2408TogglePio(byte bus, uint8_t* addr, uint8_t pio, uint8_t* data)
 {
 	uint8_t d;
 
 	if (data == NULL)
-		d = ds2408PioGet(ds, bus, addr);
+		d = ds2408PioGet(bus, addr);
 	else
 		d = data[1];
 	if (d & pio)
@@ -283,7 +308,7 @@ uint8_t OwDevices::ds2408TogglePio(OneWireBase *ds, byte bus, uint8_t* addr, uin
 	else
 		d |= pio;
 
-	d = ds2408PioSet(ds, bus, addr, d);
+	d = ds2408PioSet(bus, addr, d);
 
 	return d;
 }
@@ -291,31 +316,31 @@ uint8_t OwDevices::ds2408TogglePio(OneWireBase *ds, byte bus, uint8_t* addr, uin
 /**
  * data - array of min 24 items
  */
-int OwDevices::ds2408CfgRead(OneWireBase *ds, byte bus, byte adr[8], uint8_t* data)
+int OwDevices::ds2408CfgRead(byte bus, byte adr[8], uint8_t* data)
 {
 	int i, len = MAX_CFG_SIZE;
 
-	ds->selectChannel(bus);
-	ds->reset();
-	ds->select(adr);
-	ds->write (0x85);
+	ow->selectChannel(bus);
+	ow->reset();
+	ow->select(adr);
+	ow->write (0x85);
 
 	for (i = 0; i < len - 1; i++)
-		data[i] = ds->read ();
+		data[i] = ow->read ();
 
 	return len;
 }
 
-void OwDevices::ds2408CfgWrite(OneWireBase *ds, byte bus, byte adr[8], uint8_t* d, uint8_t len)
+void OwDevices::ds2408CfgWrite(byte bus, byte adr[8], uint8_t* d, uint8_t len)
 {
 	int i;
 
-	ds->selectChannel(bus);
-	ds->reset();
-	ds->select(adr);
-	ds->write (0x86);
+	ow->selectChannel(bus);
+	ow->reset();
+	ow->select(adr);
+	ow->write (0x86);
 	for (i = 0; i < len; i++)
-		ds->write(d[i]);
+		ow->write(d[i]);
 }
 
 /**
@@ -324,28 +349,28 @@ void OwDevices::ds2408CfgWrite(OneWireBase *ds, byte bus, byte adr[8], uint8_t* 
  * 1: set alarms and reset
  * 2: read temperature and scratchpad
 */
-uint16_t OwDevices::tempRead(OneWireBase *ds, byte busNr, byte addr[8], byte mode)
+uint16_t OwDevices::tempRead(byte busNr, byte addr[8], byte mode)
 {
 	uint8_t scratchPad[9];
 
-	ds->selectChannel(busNr);
-	ds->reset();
-	ds->select(addr);
+	ow->selectChannel(busNr);
+	ow->reset();
+	ow->select(addr);
 	switch (mode) {
 	case 0:
-		ds->write(STARTCONVO);
+		ow->write(STARTCONVO);
 		return 0;
 	case 2:
-		ds->write(WRITESCRATCH);
-		ds->write(35); // high alarm temp
-		ds->write(10); // low alarm temp
+		ow->write(WRITESCRATCH);
+		ow->write(35); // high alarm temp
+		ow->write(10); // low alarm temp
 		return 0;
 	case 1:
 	default:
 		/* read temp */
 		break;
 	}
-	ds->write(READSCRATCH);
+	ow->write(READSCRATCH);
 	// Read all registers in a simple loop
 	// byte 0: temperature LSB
 	// byte 1: temperature MSB
@@ -362,14 +387,14 @@ uint16_t OwDevices::tempRead(OneWireBase *ds, byte busNr, byte addr[8], byte mod
 #if 0
 	Serial.print(F(" "));
 	for (uint8_t i = 0; i < 9; i++) {
-		scratchPad[i] = ds->read();
+		scratchPad[i] = ow->read();
 		Serial.print(scratchPad[i], HEX);
 		Serial.print(F(" "));
 	}
 	Serial.println();
 #else
 	for (uint8_t i = 0; i < 9; i++)
-		scratchPad[i] = ds->read();
+		scratchPad[i] = ow->read();
 #endif
 	int16_t raw = (scratchPad[1] << 8) | scratchPad[0];
 #define cfg  (scratchPad[4] & 0x60)
