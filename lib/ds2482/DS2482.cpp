@@ -142,6 +142,7 @@ bool DS2482::reset()
 
 uint8_t DS2482::write(uint8_t b, uint8_t power)
 {
+	(void)power;
 	busyWait(true);
 	begin();
 	Wire.write(0xa5);

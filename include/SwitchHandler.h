@@ -3,12 +3,18 @@
 
 /* config */
 #define MAX_BUS 3
+#ifdef AVRSIM
+#define MAX_TIMER 2
+#define MAX_SWITCHES 4
+#define MAX_TIMED_SWITCH 2
+#else
+#define MAX_TIMER 10
 /* per bus 12 addresses and each 5 latches, sometimes long presses additionally */
 #define MAX_SWITCHES MAX_BUS * 12 * 5
 #define MAX_TIMED_SWITCH 10
+#endif
 #define MAX_DIMMER 3
-
-#define HOST_ALRM_PIN 6
+#define DEF_SECS 30
 
 /* modes */
 #define MODE_ALRAM_POLLING 0x2
@@ -38,22 +44,26 @@ enum _pio_mode {
 class SwitchHandler
 {
 	private:
-		OwDevices* ow;
+		OwDevices* _devs;
 		OneWireBase *ds;
 		uint8_t data[10];
-		byte mode;
+		uint8_t mode;
 		uint16_t srcData(uint8_t busNr, uint8_t adr1);
+		uint8_t dataRead(union d_adr dst, uint8_t adr[8]);
+		uint8_t dimStage(uint8_t dim);
+		bool actorHandle(union d_adr dst, enum _pio_mode mode);
 
 	public:
 
-		SwitchHandler(OwDevices* ow) { this->ow = ow; };
-		void begin(OneWireBase *ds);
+		SwitchHandler(OwDevices* devs) { this->_devs = devs; };
+		void begin(OneWireBase *ow);
 		void loop();
 		void initSwTable();
-		bool alarmHandler(byte busNr, byte mode);
+		bool alarmHandler(uint8_t busNr, uint8_t mode);
 		bool switchHandle(uint8_t busNr, uint8_t adr1);
 		bool switchHandle(uint8_t busNr, uint8_t adr1, uint8_t latch, uint8_t mode);
 		bool timerUpdate(union d_adr dst, uint16_t secs);
-		bool switchPio(union d_adr dst, enum _pio_mode mode);
 		bool switchLevel(union d_adr dst, uint8_t level);
+		bool setPio(union d_adr dst, uint8_t adr[8], uint8_t d, enum _pio_mode mode);
+		bool setLevel(union d_adr dst, uint8_t adr[8], uint8_t id, uint8_t d, uint8_t level);
 };

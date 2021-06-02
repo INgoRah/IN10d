@@ -32,6 +32,9 @@
 					ledOn = 1;
 #define LED_OFF() digitalWrite(13, 0); \
 					ledOn = 0;
+#define HOST_SLAVE_ADR 0x2f
+
+extern struct _sw_tbl sw_tbl[MAX_SWITCHES];
 
 byte mode;
 byte debug;
@@ -40,7 +43,7 @@ uint8_t hostData[12];
 /*
  * Objects
  */
-TwiHost host(0x2f);
+TwiHost host;
 DS2482 ds1(0);
 OwDevices ow;
 SwitchHandler swHdl (&ow);
@@ -72,136 +75,27 @@ byte alarmSignal, pinSignal, wdFired, ledOn = 0;
 unsigned long ledOnTime = 0;
 unsigned long wdTime = 0;
 static unsigned long alarmPolling = 0;
-static int id;
 uint8_t *hostBuf = NULL;
 
 /*
 * Function declarations
 */
+static void ledBlink();
+int i2cRead();
 
+
+/*
+* Function definitions
+*/
+#if 0
 void wdtAlarm()
 {
 }
 
-extern struct _sw_tbl sw_tbl[MAX_SWITCHES];
-
-int i2cRead()
-{
-	int cnt = 1000;
-
-	while (cnt-- && !Wire.available())
-		delayMicroseconds(1);
-	if (cnt == 0)
-		return -1;
-
-	return Wire.read();
-}
-
-#define I2C_READ(arg) \
-		do { \
-			int d; \
-			d = i2cRead(); \
-			if (arg == -1) { \
-				host.setStatus(STAT_FAIL); \
-				return; \
-			} \
-			arg = d; \
-		} while(0)
-
 void hostCommand(uint8_t cmd, uint8_t data)
 {
-	uint8_t cnt, adr[8], bus;
-#define MAX_DATA (15 * 7)
-
-	switch (cmd)
-	{
-	case 0x5A:
-		hostBuf = (uint8_t*)malloc(MAX_DATA);
-		host.setStatus(STAT_BUSY);
-		id = 0;
-		ds->reset_search();
-		if (ds->reset()) {
-			cnt = 0;
-			while (ds->search(adr)) {
-				memcpy (&hostBuf[cnt], adr, 7);
-				cnt += 7;
-				// wrap around in case of overflow
-				if (cnt > MAX_DATA)
-					cnt = 0;
-			}
-			host.setData(hostBuf, cnt);
-			host.setStatus(STAT_OK);
-		}
-		else
-			host.setStatus(STAT_NO_DATA);
-		break;
-	case 0x5B:
-		free(hostBuf);
-		break;
-	case 0x4B:
-		break;
-	case 0x02:
-	{
-		/* programming switch table */
-		int i;
-		union s_adr src;
-		union d_adr dst;
-
-		host.setStatus(STAT_BUSY);
-		I2C_READ(dst.da.type);
-		I2C_READ(src.sa.bus);
-		I2C_READ(src.sa.adr);
-		I2C_READ(src.sa.latch);
-		I2C_READ(src.sa.press);
-		I2C_READ(dst.da.bus);
-		I2C_READ(dst.da.adr);
-		I2C_READ(dst.da.pio);
-		for (i = 0; i < MAX_SWITCHES; i++) {
-			if (sw_tbl[i].src.data == 0 || sw_tbl[i].src.data == src.data) {
-				sw_tbl[i].src.data = src.data;
-				sw_tbl[i].dst.data = dst.data;
-				break;
-			}
-		}
-		host.setStatus(STAT_OK);
-		break;
-	}
-	case 0x04:
-	{
-		int i;
-
-		host.setStatus(STAT_BUSY);
-		I2C_READ(bus);
-		I2C_READ(adr[1]);
-		Serial.print(bus);
-		Serial.print(F("."));
-		Serial.print(adr[1]);
-		ow.adrGen (ds, bus, adr, adr[1]);
-		/* here we change from slave to master
-		* Would be nice to have a signal (GPIO) to signal
-		* usage of the I2C */
-		ow.ds2408RegRead(ds, bus, adr, hostData, false);
-		for (i = 0; i < 9; i++) {
-			Serial.print(hostData[i], HEX);
-			Serial.print(F(" "));
-		}
-		Serial.println(hostData[i], HEX);
-#if 0
-		hostData[0] = d[0]; // PIO Logic State
-		hostData[1] = d[1]; // Output latch
-		hostData[2] = d[2]; // Activity latch state
-		hostData[3] = d[5]; // Status
-		hostData[4] = d[6]; // Status ext 1
-		hostData[5] = d[7]; // Status ext 2
-#endif
-		host.setData((uint8_t*)hostData, 6);
-		host.setStatus(STAT_OK);
-		break;
-	}
-	default:
-		break;
-	}
 }
+#endif
 
 void setup() {
 	uint8_t mcusr_old;
@@ -223,14 +117,12 @@ void setup() {
 	debug = 1;
 	light = 700;
 	Serial.print(F("One Wire Control"));
-	digitalWrite(HOST_ALRM_PIN, HIGH);
-	pinMode(HOST_ALRM_PIN, OUTPUT);
 	mode = MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH;
 
 	delay (10);
 	// wdt.onAlarm(wdtAlarm);
-	host.onCommand(hostCommand);
-	host.begin();
+	// host.onCommand(hostCommand);
+	host.begin (HOST_SLAVE_ADR);
 	wdFired = 0;
 
 	ow.begin(ds);
@@ -299,7 +191,7 @@ ISR (PCINT2_vect) // handle pin change interrupt for A0 to A4 here
 		pinSignal |= 1;
 }
 
-void ledBlink()
+static void ledBlink()
 {
 	if (millis() - ledOnTime > 300) {
 		if (ledOn) {
@@ -345,13 +237,17 @@ void loop()
 	if (ledOnTime != 0 && !alarmSignal) {
 		ledBlink();
 	}
-	swHdl.loop();
 	if (pinSignal) {
 		// interrupt to host
-		digitalWrite (HOST_ALRM_PIN, LOW);
 		swHdl.switchHandle(0, 9, 1, mode);
 		pinSignal = 0;
 	}
+	/* if there is any host data transfer, avoid conflicts on the I2C bus
+	 * and skip handling - transfer should be finished very quickly
+	if (host.getStatus() == STAT_BUSY)
+		return;
+	 */
+	swHdl.loop();
 	if (alarmSignal) {
 		alarmPolling = millis();
 		if (debug > 2) {

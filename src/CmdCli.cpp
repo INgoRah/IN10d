@@ -148,12 +148,13 @@ void CmdCli::funcSearch(CmdParser *myParser)
 {
 	int i, res;
 
+	(void)myParser;
 	for (i = 0; i < 4; i++) {
 		Serial.print(F("== Ch "));
 		Serial.print(i);
 		Serial.println(F(" =="));
 		wdt_reset();
-		res = ow->search(ds, i);
+		res = ow->search(i);
 		if (res > 0) {
 			Serial.print(res);
 			Serial.println(F(" devs found"));
@@ -176,7 +177,7 @@ void CmdCli::funcStatus(CmdParser *myParser)
 			res = atoi(myParser->getCmdParam(2));
 		else
 			res = false;
-		ow->adrGen(ds, curBus, adr, adr[1]);
+		ow->adrGen(curBus, adr, adr[1]);
 #if EXT_DEBUG
 		if (debug) {
 			int i;
@@ -187,7 +188,7 @@ void CmdCli::funcStatus(CmdParser *myParser)
 			Serial.println(adr[i], HEX);
 		}
 #endif
-		ow->ds2408RegRead(ds, curBus, adr, data, res);
+		ow->ds2408RegRead(curBus, adr, data, res);
 		Serial.print(F("Data "));
 		for (i = 0; i < 9; i++) {
 			Serial.print(data[i], HEX);
@@ -223,11 +224,11 @@ void CmdCli::funcPio(CmdParser *myParser)
 	switch (adr[1]) {
 		case 10:
 			static uint8_t target[8] = { 0x3A, 0x01, 0xDA, 0x84, 0x00, 0x00, 0x05, 0xA3 };
-			ow->toggleDs2413 (ds, curBus, target);
+			ow->toggleDs2413 (curBus, target);
 			break;
 		default:
-			ow->adrGen(ds, curBus, adr, adr[1]);
-			ow->ds2408RegRead(ds, curBus, adr, data, false);
+			ow->adrGen(curBus, adr, adr[1]);
+			ow->ds2408RegRead(curBus, adr, data, false);
 			for (i = 0; i < 9; i++) {
 				Serial.print(data[i], HEX);
 				Serial.print(F(" "));
@@ -240,10 +241,10 @@ void CmdCli::funcPio(CmdParser *myParser)
 					level = ((level & 0xf) << 4) | pio;
 				else
 					level = 0;
-				ow->ds2408PioSet(ds, curBus, adr, level);
+				ow->ds2408PioSet(curBus, adr, level);
 			} else
-				ow->ds2408TogglePio(ds, curBus, adr, 1 << pio, data);
-			ow->ds2408RegRead(ds, curBus, adr, data, true);
+				ow->ds2408TogglePio(curBus, adr, 1 << pio, data);
+			ow->ds2408RegRead(curBus, adr, data, true);
 			for (i = 0; i < 9; i++) {
 				Serial.print(data[i], HEX);
 				Serial.print(F(" "));
@@ -263,9 +264,9 @@ void CmdCli::funcTemp(CmdParser *myParser)
 		byte bus;
 
 		bus = 0;
-		ow->tempRead (ds, bus, adrt, 0);
+		ow->tempRead (bus, adrt, 0);
 		delay(200);
-		temp = ow->tempRead (ds, bus, adrt, 1);
+		temp = ow->tempRead (bus, adrt, 1);
 		Serial.print(temp / 16);
 		Serial.println(F(" C"));
 
@@ -278,16 +279,16 @@ void CmdCli::funcTemp(CmdParser *myParser)
 	if (adr[1] > 10) {
 		uint8_t adrt[8] = { 0x28, 0x65, 0x0E, 0xFD, 0x05, 0x00, 0x00, 0x4D };
 
-		ow->tempRead (ds, curBus, adrt, 0);
+		ow->tempRead (curBus, adrt, 0);
 		delay(800);
-		temp = ow->tempRead (ds, curBus, adrt, 1);
+		temp = ow->tempRead (curBus, adrt, 1);
 		Serial.print((float)(temp / 16));
 		Serial.println(F(" C"));
 		return;
 	}
 #endif
 	adr[0] = 0x28;
-	ow->adrGen(ds, curBus, adr, adr[1]);
+	ow->adrGen(curBus, adr, adr[1]);
 #if EXT_DEBUG
 	if (debug) {
 		int i;
@@ -298,9 +299,9 @@ void CmdCli::funcTemp(CmdParser *myParser)
 		Serial.println(adr[i], HEX);
 	}
 #endif
-	ow->tempRead (ds, curBus, adr, 0);
+	ow->tempRead (curBus, adr, 0);
 	delay(100);
-	temp = ow->tempRead (ds, curBus, adr, 1);
+	temp = ow->tempRead (curBus, adr, 1);
 	Serial.print((float)(temp / 16));
 	Serial.println(F(" C"));
 
@@ -343,7 +344,7 @@ void CmdCli::funcCfg(CmdParser *myParser)
 		adr[1] = adr[1] - 20;
 		adr[0] = 0x28;
 	}
-	ow->adrGen(ds, curBus, adr, adr[1]);
+	ow->adrGen(curBus, adr, adr[1]);
 	c = myParser->getCmdParam(2);
 	if (*c == 'w') {
 		for (i = 0; i < MAX_CFG_SIZE; i++) {
@@ -356,11 +357,11 @@ void CmdCli::funcCfg(CmdParser *myParser)
 		Serial.print(F("Cfg write ("));
 		Serial.print(i);
 		Serial.print(") ");
-		ow->ds2408CfgWrite(ds, curBus, adr, data, i);
+		ow->ds2408CfgWrite(curBus, adr, data, i);
 	}
 	if (*c == 'r') {
 		Serial.print(F("Cfg Read ("));
-		len = ow->ds2408CfgRead(ds, curBus, adr, data);
+		len = ow->ds2408CfgRead(curBus, adr, data);
 		Serial.print(len);
 		Serial.print(F(") "));
 		for (i = 0; i < len - 1; i++) {
@@ -371,10 +372,9 @@ void CmdCli::funcCfg(CmdParser *myParser)
 	}
 	if (*c == 's') {
 		Serial.print(F("Cfg save ("));
-		len = ow->ds2408CfgRead(ds, curBus, adr, data);
+		len = ow->ds2408CfgRead(curBus, adr, data);
 		data[21] = 0x55;
-		len = 24;
-		ow->ds2408CfgWrite(ds, curBus, adr, data, len);
+		ow->ds2408CfgWrite(curBus, adr, data, len);
 		Serial.print(len);
 		Serial.print(F(")"));
 	}
@@ -414,9 +414,9 @@ void CmdCli::funcCmd(CmdParser *myParser)
 
 	adr[1] = me->atoh(myParser->getCmdParam(1), false);
 	d = me->atoh(myParser->getCmdParam(2), false);
-	ow->adrGen(ds, curBus, adr, adr[1]);
+	ow->adrGen(curBus, adr, adr[1]);
 #if 0
-	ow->ds2408PioSet(ds, curBus, adr, d);
+	ow->ds2408PioSet(curBus, adr, d);
 #else
 	data[0] = d;
 #endif
@@ -425,7 +425,7 @@ void CmdCli::funcCmd(CmdParser *myParser)
 		for (i = 0; i < 4; i++) {
 			d = me->atoh(myParser->getCmdParam(3 + i), false);
 #if 0
-			ow->ds2408PioSet(ds, curBus, adr, d);
+			ow->ds2408PioSet(curBus, adr, d);
 #else
 			data[1 + i] = d;
 #endif
@@ -437,9 +437,9 @@ void CmdCli::funcCmd(CmdParser *myParser)
 			if (txt[i] == 0) {
 #if 1
 				data[5 + i] = 0;
-				ow->ds2408ChWrite(ds, curBus, adr, data, 5 + i);
+				ow->ds2408ChWrite(curBus, adr, data, 5 + i);
 #else
-				ow->ds2408PioSet(ds, curBus, adr, 0);
+				ow->ds2408PioSet(curBus, adr, 0);
 #endif
 				Serial.println('<');
 
@@ -448,7 +448,7 @@ void CmdCli::funcCmd(CmdParser *myParser)
 #if 1
 				data[5 + i] = txt[i];
 #else
-				ow->ds2408PioSet(ds, curBus, adr, txt[i]);
+				ow->ds2408PioSet(curBus, adr, txt[i]);
 #endif
 			Serial.print(txt[i], HEX);
 			Serial.print(' ');
@@ -762,11 +762,11 @@ void CmdCli::funcChgId(CmdParser *myParser)
 	bus = me->atoh(myParser->getCmdParam(1), false);
 	adr[1] = me->atoh(myParser->getCmdParam(2), false);
 	// first address with bus and adr
-	ow->adrGen(ds, bus, adr, adr[1]);
+	ow->adrGen(bus, adr, adr[1]);
 	bus = me->atoh(myParser->getCmdParam(3), false);
 	id = me->atoh(myParser->getCmdParam(4), false);
 	// first address with bus and adr
-	ow->adrGen(ds, bus, newAdr, id);
+	ow->adrGen(bus, newAdr, id);
 #if EXT_DEBUG
 	if (debug) {
 		int i;
@@ -860,10 +860,6 @@ void serialEvent() {
 			inputString += inChar;
 			Serial.print(inChar);
 			Serial.flush();
-			return;
-		}
-		if (inChar > 0x7F) {
-			Serial.println(inChar, HEX);
 			return;
 		}
 	}
