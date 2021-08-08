@@ -9,38 +9,6 @@
 /** Retries for activity latch reset */
 #define ACTRES_RETRY 5;
 
-union s_adr {
-	uint16_t data;
-	struct {
-		unsigned int res : 1;
-		// pio/latch number 0..7
-		unsigned int bus : 3;  /* 1..7 */
-		/** Press time
-		 * 0: short press
-		 * 2: button pushed (for long press detection)
-		 * 1: long press released */
-		unsigned int press : 2;
-		/** Latch number (only one)
-		 * 0: invalid
-		 * 1..7: valid
-		 * */
-		unsigned int latch : 4; /* 1..15 */
-		unsigned int adr : 6; /* 1..3F (65) */
-	} sa;
-};
-
-// todo: add force on? or based on src like PIR?
-union d_adr {
-	uint8_t data;
-	struct {
-		/* PIO0 = 0, PIO1 = 1 */
-		unsigned int pio : 1;
-		unsigned int adr : 4;
-		unsigned int type : 1;
-		unsigned int bus : 2;
-	} da;
-};
-
 class OwDevices
 {
 	private:

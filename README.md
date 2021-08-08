@@ -1,23 +1,35 @@
-Arduino 1-Wire Homeautomation Fallback
+Arduino 1-Wire Homeautomation Base
 
 # Changes
 [x] timer based control (different switch table?). Use CLI sw t <bus> <adr> <latch> <bus> <adr> <pio>.
     Default 30 secs at the moment
 [x] Host IF for switch table
 [x] Host IF for control
+[x] Host GPIO signal verified
+[x] Switch with same dst does not clear timer if running.
+[x] Log latch and switch
 
 # Bugs
-[ ] Host GPIO signal not yet verified / maybe not working
-[ ] Switch with same dst does not clear timer if running. 
     Pressing a button to permanently switch on light is not working
 
 # TodDo
 [ ] (ongoing) Timer based on light with configurable threshold
 [ ] Custom timer time per switch
-[ ] Host IF alarm indication debugging with PI
 [ ] Host IF for status read
-
 # Documentation
+
+# Build
+Create a post_extra_script.py to copy over to PI:
+Import("env", "projenv")
+env.AddPostAction(
+    "$BUILD_DIR/${PROGNAME}.elf",
+    env.VerboseAction(" ".join([
+        "scp ",
+        "$BUILD_DIR/${PROGNAME}.hex", "<user>@<ip>:<path>/${PROGNAME}.hex"
+    ]), "Copying $BUILD_DIR/${PROGNAME}.hex")
+)
+
+Debugging with "simulation" target
 
 ## Main Tasks
 Monitors 1-Wire lines for incoming interrupts (alarms) to be used instead of polling.
@@ -64,7 +76,7 @@ Still the lookup table could be too large and this needs to be mitigated.
 
 ## I2C format
 C3 - channel select like in DS2482
-F0 - reset 
+F0 - reset
 69 - mode selection: [2] [4]
 5A - search first device, wait for search cycle for reading, returns 0 if nothing found or | id | adr [8]
 5B - search next device, returns 0 if nothing found or | id | adr [8]

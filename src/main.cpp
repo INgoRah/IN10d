@@ -25,9 +25,19 @@
 #include "SwitchHandler.h"
 
 /*
+Used pins:
+D3 - Relais ouput, negative polarity - active switching GND
+D5 - PWM output (dimed LED) via open coollector transistor
+D2 - PIR
+D6 - used for alarm signal to host (class TwiHost)
+D13 - built in LED
+A0..A4 - 1-wire monitor
+A6 - Light sensor (analog)
+*/
+
+/*
  * Local constants
  */
-
 #define LED_ON() digitalWrite(13, 1); \
 					ledOn = 1;
 #define LED_OFF() digitalWrite(13, 0); \
@@ -118,7 +128,7 @@ void setup() {
 	light = 700;
 	Serial.print(F("One Wire Control"));
 	mode = MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH;
-
+	digitalWrite(3, 1);
 	delay (10);
 	// wdt.onAlarm(wdtAlarm);
 	// host.onCommand(hostCommand);
@@ -250,9 +260,6 @@ void loop()
 	swHdl.loop();
 	if (alarmSignal) {
 		alarmPolling = millis();
-		if (debug > 2) {
-			Serial.println(F("Alarm"));
-		}
 		if (mode & MODE_ALRAM_HANDLING) {
 			byte retry;
 			for (byte i = 0; i < MAX_BUS; i++) {

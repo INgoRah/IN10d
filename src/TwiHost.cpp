@@ -12,6 +12,11 @@
 #define CMD_SET_READ_PTR        0xE1	/* Param: DS2482_PTR_CODE_xxx */
 #define CMD_DATA 0x96
 #define CMD_TIME 0x40
+#define CMD_EVT_DATA 0x01
+/** Acknowledge event data reception with the id. This will only remove
+ * it from the reporting queue
+ */
+#define CMD_ACK 0x78
 #define CMD_SWITCH 3
 
 extern TwiHost host;
@@ -29,22 +34,24 @@ static uint8_t rdLen, rdPos;
 uint8_t cmd = 0xFF;
 // registers
 static uint8_t reg;
-static uint8_t rxBuf[4];
 
-TwiHost::TwiHost()
+TwiHost::TwiHost(byte slaveAdr)
 {
-	rdLen = 0;
-	cmd = 0xff;
+	this->slaveAdr = slaveAdr;
 }
 
-void TwiHost::begin(uint8_t slaveAdr)
+void TwiHost::begin()
 {
-	digitalWrite(HOST_ALRM_PIN, HIGH);
-	pinMode(HOST_ALRM_PIN, OUTPUT);
-
+	cmd = 0xff;
+	rdLen = 0;
+	busy = false;
 	Wire.begin(slaveAdr);
 	Wire.onReceive(receiveEvent);
 	Wire.onRequest(requestEvent);
+}
+
+void TwiHost::end()
+{
 }
 
 void TwiHost::onCommand( void (*function)(uint8_t, uint8_t) )
@@ -84,17 +91,17 @@ void TwiHost::command()
 			hostData[5] = (d.data & 0xff00) >> 8;
 			hostData[6] = d.data & 0xff;
 			setData((uint8_t*)hostData, 7);
- 			setStatus(STAT_OK);
+			setStatus(STAT_OK);
 		} else
 			host.setStatus(STAT_NO_DATA);
 		break;
+#if 0
 	case 0x02:
 	{
 		/* programming switch table */
-#if 0
 		int i;
 		union s_adr src;
-		union d_adr dst;
+		union d_adr_8 dst;
 
 		host.setStatus(STAT_BUSY);
 		I2C_READ(dst.da.type);
@@ -112,60 +119,60 @@ void TwiHost::command()
 				break;
 			}
 		}
-#endif
 		host.setStatus(STAT_OK);
 		break;
 	}
+#endif
 	case CMD_SWITCH:
 		// switching
 		{
 			byte level;
-			union d_adr dst;
+			union pio dst;
 
 			dst.data = 0;
-			if (rxBytes < 4) {
-#ifdef EXT_DEBUG
+			if (debug > 2) {
 				Serial.print("rx cnt=");
 				Serial.println(rxBytes);
-				Serial.print("avail=");
-				Serial.println(Wire.available());
+			}
+			bus = Wire.read();
+			dst.da.adr = Wire.read();
+			dst.da.pio = Wire.read();
+			level = Wire.read();
+			/*I2C_READ(bus);
+			I2C_READ(dst.da.adr);
+			I2C_READ(dst.da.pio);
+			I2C_READ(level);
+			*/
+			dst.da.bus = bus;
+
+			if (dst.data == 0) {
 				Serial.println(F("invalid"));
-#endif
 				host.setStatus(STAT_FAIL);
 				return;
 			}
-			dst.da.bus = rxBuf[0];
-			dst.da.adr = rxBuf[1];
-			dst.da.pio = rxBuf[2];
-			level = rxBuf[3];
-			if (dst.data == 0 || dst.data == 0xff) {
-				Serial.println(F("invalid"));
-				host.setStatus(STAT_FAIL);
-				return;
-			}
-			setStatus(STAT_PROCESSING);
+			if (dst.da.bus == 0 && dst.da.adr == 9)
+				dst.da.type = 2;
+			else
+				dst.da.type = 0;
 #ifdef EXT_DEBUG
 			if (debug > 1) {
-				Serial.print(dst.da.bus);
-				Serial.print(F("."));
-				Serial.print(dst.da.adr);
-				Serial.print(F("."));
-				Serial.print(dst.da.pio);
-				Serial.print(F(" level="));
-				Serial.println(level);
-
-			}
-#endif
-			// switch off I2C slave till done
-			if (swHdl.switchLevel(dst, level))
-				setStatus(STAT_OK);
+			Serial.print(dst.da.bus);
+			Serial.print(F("."));
+			Serial.print(dst.da.adr);
+			Serial.print(F("."));
+			Serial.print(dst.da.pio);
+			Serial.print(F(" level="));
+			Serial.println(level);
+	#endif
+			swHdl.switchLevel(dst, level);
+			setStatus(STAT_OK);
 			else
 				setStatus(STAT_NOPE);
 			break;
 		}
+#if 0
 		case 0x04:
 		{
-#if 0
 			int i;
 			/* status read ... */
 
@@ -191,11 +198,9 @@ void TwiHost::command()
 			hostData[4] = d[6]; // Status ext 1
 			hostData[5] = d[7]; // Status ext 2
 			host.setData((uint8_t*)hostData, 6);
-#endif
 			host.setStatus(STAT_OK);
 			break;
 		}
-#if 0
 		/* external search not supported. Will be done by owfs with a bus lock */
 		case 0x5A:
 			uint8_t cnt, adr[8], bus;
@@ -241,6 +246,7 @@ void TwiHost::loop()
 		// mark as handled
 		cmd = 0xff;
 		rxBytes = 0;
+		// more bytes in the queue?
 	}
 	if (rxBytes > 0) {
 		/* should never happen */
@@ -272,7 +278,6 @@ void TwiHost::addEvent(uint8_t type, uint16_t source, uint16_t data)
 	d.min = min;
 	d.sec = sec;
 	events.push(d);
-	digitalWrite (HOST_ALRM_PIN, LOW);
 };
 
 void TwiHost::addEvent(uint8_t type, uint8_t bus, uint8_t adr, uint16_t data)
@@ -306,10 +311,16 @@ void TwiHost::setData(uint8_t *data, uint8_t len)
 void TwiHost::receiveEvent(int howMany) {
 	byte d;
 
-	if (cmd != 0xff) {
+	d = Wire.read();
+	if (cmd != 0xff &&
+		(d == CMD_SWITCH || d == CMD_EVT_DATA)) {
+		Serial.print (F("cmd "));
 		Serial.print (cmd);
-		Serial.print (F(" cmd not yet handled"));
-
+		Serial.print (F(" not yet handled | "));
+		Serial.print (F(", Stat  "));
+		Serial.print (host.status, HEX);
+		Serial.print (F(" new "));
+		Serial.println (d, HEX);
 	}
 	// got how many bytes - the one we read here
 	host.rxBytes = howMany - 1;
@@ -319,17 +330,20 @@ void TwiHost::receiveEvent(int howMany) {
 	{
 	case CMD_RESET:
 		host.setStatus(STAT_OK);
+		cmd = 0xff;
 		break;
+#if 0
 	case CMD_CHANNEL_SELECT:
 		reg = DS2482_CHANNEL_SELECTION_REGISTER;
 		d = Wire.read() & 0x0f;
 		user_onCommand(d, d);
 		break;
+#endif
 	case CMD_SET_READ_PTR:
 		reg = Wire.read();
 		host.rxBytes--;
 		break;
-	case CMD_DATA:
+	case DS2482_CMD_DATA:
 		// host will request data, so just set the register
 		reg = DS2482_DATA_REGISTER;
 		rdPos = 0;
@@ -337,16 +351,16 @@ void TwiHost::receiveEvent(int howMany) {
 		 * calling requestEvent.
 		 * Flag host busy?
 		*/
-		host.status = STAT_READY;
+		host.setStatus(STAT_BUSY);
 		break;
-	case CMD_MODE:
+	case DS2482_CMD_MODE:
 		mode = Wire.read();
 		host.rxBytes--;
 		break;
 	case 1: // get event data
 		if (host.events.size() > 0) {
 			host.setStatus(STAT_BUSY);
-			cmd = 1;
+			cmd = CMD_EVT_DATA;
 		}
 		else
 			host.setStatus(STAT_NO_DATA);
@@ -359,14 +373,17 @@ void TwiHost::receiveEvent(int howMany) {
 		host.rxBytes -= 3;
 		break;
 	case CMD_SWITCH:
-		cmd = d;
+		cmd = CMD_SWITCH;
 		host.setStatus(STAT_BUSY);
 		for (uint8_t i = 0; i < howMany - 1; ++i)
 			rxBuf[i] = Wire.read();
 		break;
+	default:
+		Serial.println(F("unkown CMD"));
+		break;
+#if 0
 	case 2:
 		/* switch table */
-#if 0
 		I2C_READ(dst.da.type);
 		I2C_READ(src.sa.bus);
 		I2C_READ(src.sa.adr);
@@ -375,27 +392,12 @@ void TwiHost::receiveEvent(int howMany) {
 		I2C_READ(dst.da.bus);
 		I2C_READ(dst.da.adr);
 		I2C_READ(dst.da.pio);
-#endif
 		/*fall-through */
 	case 4:
-		/* status read ... */
 		// more bytes received, read in loop
 		host.setStatus(STAT_BUSY);
-		/*fall-through */
 	default:
 		cmd = d;
-		Serial.print (cmd);
-		Serial.print (F(" cmd "));
-		Serial.print (host.rxBytes);
-		Serial.print (F(" pending "));
-		Serial.print("avail=");
-		Serial.print(Wire.available());
-		if (host.rxBytes > 0) {
-			Serial.print (" [");
-			Serial.print (Wire.peek());
-			Serial.print (" ]");
-		}
-		Serial.println();
 		// handle in loop to not block status reads
 	}
 	wdTime = millis();
@@ -413,13 +415,13 @@ void TwiHost::requestEvent() {
 		Wire.write(host.getStatus());
 		break;
 	case DS2482_DATA_REGISTER:
-		/* write bulk of data */
+		/* instead write bulk of data should be possible ... */
 		if (rdPos < rdLen && rdData != NULL) {
 			Wire.write(rdData, rdLen);
 			rdPos = rdLen;
 			//Wire.write(rdData[rdPos++]);
 			//if (rdPos == rdLen)
-			host.status = STAT_READY;
+			host.setStatus(STAT_OK);
 		}
 		else {
 			host.setStatus(STAT_NO_DATA);
@@ -434,7 +436,7 @@ void TwiHost::requestEvent() {
 			if (host.events.size() > 0) {
 				stat |= STAT_EVT;
 			}
-			Wire.write((uint8_t)(stat | (wdFired << 1)));
+			Wire.write(stat | (wdFired << 1));
 			if (alarmSignal) {
 				alarmSignal = 0;
 				digitalWrite(13, 0);

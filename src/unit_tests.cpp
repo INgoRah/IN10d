@@ -26,8 +26,6 @@
 #include "OwDevices.h"
 #include "SwitchHandler.h"
 
-extern unsigned long timer0_millis;
-
 /*
  * Local constants
  */
@@ -37,7 +35,7 @@ extern unsigned long timer0_millis;
  */
 extern SwitchHandler swHdl;
 extern OneWireBase *ds;
-extern uint8_t pio_data[0x0f];
+
 /*
  * Local variables
  */
@@ -63,6 +61,7 @@ void testSetup() {
 
 void testLoop()
 {
+
 	swHdl.loop();
 }
 
@@ -120,85 +119,23 @@ void tableSetup()
 	timed_tbl[1].dst.da.bus = 2;
 	timed_tbl[1].dst.da.adr = 1;
 	timed_tbl[1].dst.da.pio = 0;
-
-	dim_tbl[0].dst.da.bus = 3;
-	dim_tbl[0].dst.da.adr = 3;
-	dim_tbl[0].dst.da.pio = 0;
+/*
+	dim_tbl[2].dst.da.bus = 3;
+	dim_tbl[2].dst.da.adr = 3;
+	dim_tbl[2].dst.da.pio = 0;
 	// optional
-	dim_tbl[1].dst.da.bus = 2;
-	dim_tbl[1].dst.da.adr = 7;
-	dim_tbl[1].dst.da.pio = 0;
+	dim_tbl[0].dst.da.bus = 2;
+	dim_tbl[0].dst.da.adr = 7;
+	dim_tbl[0].dst.da.pio = 0;
+*/
 }
 
 int MainTest(int test)
 {
 	static const byte latch = 6;
-	union d_adr dst;
 	uint8_t dadr, dpio;
 
 	testSetup();
-	tableSetup();
-	if (test == 1) {
-		/*
-		Case 1:
-		switch #0 on (before off) - and off
-		*/
-		dadr = sw_tbl[0].dst.da.adr;
-		dpio = 1 << sw_tbl[0].dst.da.pio;
-		uint8_t mask = ~dpio;
-		pio_data[dadr] = 0xff;
-		/* bus, id, pio data read, mode */
-		swHdl.switchHandle(0, 1, 2, MODE_ALRAM_HANDLING | MODE_AUTO_SWITCH);
-		if (pio_data[dadr] != mask)
-			return __LINE__;
-		testLoop();
-		// off
-		swHdl.switchHandle(0, 1, 2, MODE_ALRAM_HANDLING | MODE_AUTO_SWITCH);
-		if (pio_data[dadr] != 0xff)
-			return __LINE__;
-		testLoop();
-	}
-	if (test == 2) {
-		/*
-		Case 2:
-		switch level on ... 2nd ... off
-		*/
-		dadr = sw_tbl[1].dst.da.adr;
-		dpio = sw_tbl[1].dst.da.pio;
-		pio_data[dadr] = 0x0;
-
-		swHdl.switchHandle(0, 1, 4, MODE_ALRAM_HANDLING | MODE_AUTO_SWITCH);
-		if (pio_data[dadr] != 0x71)
-			return __LINE__;
-		// check 1st level
-		swHdl.switchHandle(0, 1, 4, MODE_ALRAM_HANDLING | MODE_AUTO_SWITCH);
-		if (pio_data[dadr] != 0xf1)
-			return __LINE__;
-		// check 2nd level
-		swHdl.switchHandle(0, 1, 4, MODE_ALRAM_HANDLING | MODE_AUTO_SWITCH);
-		// check off
-		if (pio_data[dadr] != 0x0)
-			return __LINE__;
-	}
-	/*
-	Case 3:
-	timer on and off level type
-	*/
-	if (test == 3) {
-		// timer switch (PIR): 0, 2, 4 for level type
-		// dst 3 3 0
-		dadr = timed_tbl[0].dst.da.adr;
-		dpio = timed_tbl[0].dst.da.pio;
-		pio_data[dadr] = 0x0;
-
-		swHdl.switchHandle(0, 2, 4, MODE_ALRAM_HANDLING | MODE_AUTO_SWITCH);
-		if (pio_data[dadr] != 0xF1)
-			return __LINE__;
-		timer0_millis += DEF_SECS * 1000 + 100;
-		swHdl.loop();
-		if (pio_data[dadr] != 0x0)
-			return __LINE__;
-	}
 
 	/*
 	Case 4:
@@ -212,15 +149,23 @@ int MainTest(int test)
 		dadr = sw_tbl[2].dst.da.adr;
 		dpio = sw_tbl[2].dst.da.pio;
 		pio_data[dadr] = 0xff;
-
+		// switch on
 		swHdl.switchHandle(0, 2, 2, MODE_ALRAM_HANDLING | MODE_AUTO_SWITCH);
 		if (pio_data[dadr] != 0xfe)
 			return __LINE__;
 		// timer switch (PIR): 0, 2, 4 for level type
+		// must be ignored because already switched on
+		// no timer started
 		swHdl.switchHandle(2, 2, 1, MODE_ALRAM_HANDLING | MODE_AUTO_SWITCH);
 		// no change!
 		if (pio_data[dadr] != 0xfe)
 			return __LINE__;
+		timer0_millis += DEF_SECS * 1000 + 100;
+		swHdl.loop();
+		// no change! Timer shouldn't be running
+		if (pio_data[dadr] != 0xfe)
+			return __LINE__;
+		// switch off
 		swHdl.switchHandle(0, 2, 2, MODE_ALRAM_HANDLING | MODE_AUTO_SWITCH);
 		if (pio_data[dadr] != 0xff)
 			return __LINE__;
@@ -288,38 +233,48 @@ int MainTest(int test)
 		if (pio_data[dadr] != 0x0)
 			return __LINE__;
 	}
-	dst.da.bus = 2;
-	dst.da.adr = 7;
-	dst.da.pio = 0;
-	//swHdl.switchLevel(dst, 50);
 
 	if (test == 7) {
-		dst.da.bus = 1;
-		dst.da.adr = 7;
-		dst.da.pio = 1;
-		swHdl.switchLevel(dst, 100);
-		timed_tbl[0].src.data = 0;
-		timed_tbl[0].src.sa.bus = 1;
-		timed_tbl[0].src.sa.adr = 3;
-		timed_tbl[0].src.sa.latch = latch;
-		timed_tbl[0].dst.data = 0;
-		timed_tbl[0].dst.da.adr = 7;
-		timed_tbl[0].dst.da.bus = 2;
-		timed_tbl[0].dst.da.pio = 1;
-		dim_tbl[0].dst.data = timed_tbl[0].dst.data;
-		/*
-		swHdl.switchHandle(1, 3, (1 << (latch - 1)), (320 / 32), MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH);
-		swHdl.switchHandle(1, 3, (1 << (latch - 1)), (320 / 32), MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH);
-		swHdl.switchHandle(1, 3, (1 << (latch - 1)), (320 / 32), MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH);
-		swHdl.switchHandle(1, 3, (1 << (latch - 1)), (320 / 32), MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH);
-		swHdl.switchHandle(1, 3, (1 << (latch - 1)), (320 / 32), MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH);
-		*/
-		/*
-		union d_adr dst;
-		dst.da.bus = 1;
-		dst.da.adr = 2;
-		swHdl.timerUpdate(dst, 1);
-		*/
+		union pio p;
+
+		p.da.bus = 0;
+		p.da.adr = 9;
+		p.da.pio = 3;
+		p.da.type = 2;
+		// convert?
+		swHdl.switchLevel(p, 100);
+		swHdl.switchLevel(p, 0);
+
+	dst.da.bus = 1;
+	dst.da.adr = 7;
+	dst.da.pio = 1;
+	swHdl.switchLevel(dst, 100);
+	timed_tbl[0].src.data = 0;
+	timed_tbl[0].src.sa.bus = 1;
+	timed_tbl[0].src.sa.adr = 3;
+	timed_tbl[0].src.sa.latch = latch;
+	timed_tbl[0].dst.data = 0;
+	timed_tbl[0].dst.da.adr = 7;
+	timed_tbl[0].dst.da.bus = 2;
+	timed_tbl[0].dst.da.pio = 1;
+	dim_tbl[0].dst.data = timed_tbl[0].dst.data;
+	/*
+	swHdl.switchHandle(1, 3, (1 << (latch - 1)), (320 / 32), MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH);
+	swHdl.switchHandle(1, 3, (1 << (latch - 1)), (320 / 32), MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH);
+	swHdl.switchHandle(1, 3, (1 << (latch - 1)), (320 / 32), MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH);
+	swHdl.switchHandle(1, 3, (1 << (latch - 1)), (320 / 32), MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH);
+	swHdl.switchHandle(1, 3, (1 << (latch - 1)), (320 / 32), MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH);
+	*/
+	}
+	if (test == 8) {
+		union d_adr_8 dst;
+
+		dst.da.bus = 0;
+		dst.da.adr = 9;
+		dst.da.pio = 0;
+		swHdl.actorHandle(dst, ON);
+
+		swHdl.actorHandle(dst, TOGGLE);
 	}
 	return 0;
 }
@@ -327,7 +282,13 @@ int MainTest(int test)
 int main()
 {
 	int ret = 0, i;
-
+#if 0
+	uint8_t bit = digitalPinToBitMask(5);
+	Serial.print(bit);
+	analogWrite(5, 100);
+#endif
+	debug = 4;
+	ret = MainTest(8);
 	for (i = 1; i < 8; i++) {
 		ret = MainTest(i);
 		if (ret) {
