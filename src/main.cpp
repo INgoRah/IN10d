@@ -63,8 +63,8 @@ uint8_t sec;
 uint8_t min;
 uint8_t hour;
 uint8_t sun;
-uint16_t light;
-byte light_sensor = 0;
+uint8_t light;
+byte light_sensor = 1;
 
 #if !defined(AVRSIM)
 
@@ -125,7 +125,7 @@ void setup() {
 	Serial.begin(115200);
 
 	debug = 1;
-	light = 700;
+	light = 125;
 	Serial.print(F("One Wire Control"));
 	mode = MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH;
 	digitalWrite(3, 1);
@@ -231,10 +231,17 @@ void loop()
 		if (sec++ == 60) {
 			sec = 0;
 			if (light_sensor) {
+				uint16_t t;
+
 				ADCSRA = (1<<ADPS2) | (1<<ADPS1) | (1<<ADEN);
 				_delay_us (100);
-				light = analogRead(A6);
+				t = analogRead(A6);
 				ADCSRA = 0;
+				t = (t >> 2) & 0xff;
+				if (light != t) {
+					light = t;
+					host.addEvent (TYPE_BRIGHTNESS, 0, 9, light);
+				}
 			}
 			if (min++ == 60) {
 

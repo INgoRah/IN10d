@@ -268,6 +268,13 @@ int MainTest(int test)
 	}
 	if (test == 8) {
 		union d_adr_8 dst;
+		union pio p;
+
+		p.da.bus = 0;
+		p.da.adr = 9;
+		p.da.pio = 0;
+		p.da.type = 2;
+		swHdl.switchLevel(p, 15);
 
 		dst.da.bus = 0;
 		dst.da.adr = 9;

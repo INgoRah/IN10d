@@ -322,8 +322,6 @@ void TwiHost::receiveEvent(int howMany) {
 		Serial.print (F(" new "));
 		Serial.println (d, HEX);
 	}
-	// got how many bytes - the one we read here
-	host.rxBytes = howMany - 1;
 	/* assert if not at least 1? */
 	d = Wire.read();
 	switch (d)
@@ -341,7 +339,6 @@ void TwiHost::receiveEvent(int howMany) {
 #endif
 	case CMD_SET_READ_PTR:
 		reg = Wire.read();
-		host.rxBytes--;
 		break;
 	case DS2482_CMD_DATA:
 		// host will request data, so just set the register
@@ -355,7 +352,6 @@ void TwiHost::receiveEvent(int howMany) {
 		break;
 	case DS2482_CMD_MODE:
 		mode = Wire.read();
-		host.rxBytes--;
 		break;
 	case 1: // get event data
 		if (host.events.size() > 0) {
@@ -370,11 +366,11 @@ void TwiHost::receiveEvent(int howMany) {
 		min = Wire.read();
 		sun = Wire.read();
 		host.setStatus(STAT_OK);
-		host.rxBytes -= 3;
 		break;
 	case CMD_SWITCH:
 		cmd = CMD_SWITCH;
 		host.setStatus(STAT_BUSY);
+		host.rxBytes = howMany - 1;
 		for (uint8_t i = 0; i < howMany - 1; ++i)
 			rxBuf[i] = Wire.read();
 		break;

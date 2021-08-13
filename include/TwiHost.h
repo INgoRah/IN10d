@@ -21,13 +21,16 @@
 #define DS2482_MODE_REGISTER         0x69
 #define DS2482_DATA_REGISTER 0xA9
 
+#define TYPE_BRIGHTNESS 3
+
 struct logData {
 	byte h;
 	byte min;
 	byte sec;
 	/* 0: source data change
 	   1: destination change (lights switched)
-	   2: temperature alarm */
+	   2: temperature alarm
+	   3: brightness */
 	uint8_t type;
 	uint16_t source;
 	uint16_t data;

@@ -15,7 +15,7 @@ Arduino 1-Wire Homeautomation Base
 # TodDo
 [ ] (ongoing) Timer based on light with configurable threshold
 [ ] Custom timer time per switch
-[ ] Host IF for status read
+[ ] (ongoing) Host IF for status read
 # Documentation
 
 # Build
