@@ -170,11 +170,12 @@ void CmdCli::funcStatus(CmdParser *myParser)
 	byte data[10], i;
 
 	if (myParser->getParamCount() > 0) {
-		byte adr[8];
+		byte adr[8], bus;
 
-		adr[1] = atoi(myParser->getCmdParam(1));
-		if (myParser->getParamCount() > 1)
-			res = atoi(myParser->getCmdParam(2));
+		bus = atoi(myParser->getCmdParam(1));
+		adr[1] = atoi(myParser->getCmdParam(2));
+		if (myParser->getParamCount() > 2)
+			res = atoi(myParser->getCmdParam(3));
 		else
 			res = false;
 		ow->adrGen(curBus, adr, adr[1]);
@@ -204,12 +205,26 @@ void CmdCli::funcPio(CmdParser *myParser)
 	uint8_t level;
 	union pio dst;
 
+<<<<<<< HEAD
 	// channel first
+=======
+	if (myParser->getParamCount() != 4) {
+		Serial.println(F("?"));
+		return;
+	}
+>>>>>>> 7a448b5 (CLI improvements)
 	dst.da.bus = atoi(myParser->getCmdParam(1));
 	dst.da.adr = atoi(myParser->getCmdParam(2));
 	dst.da.pio = atoi(myParser->getCmdParam(3));
 	level = atoi(myParser->getCmdParam(4));
+<<<<<<< HEAD
 		swHdl.switchLevel(dst, level);
+=======
+	// convenience: 1 instead of typing 100
+	if (level == 1)
+		level = 100;
+	swHdl.switchLevel(dst, level);
+>>>>>>> 7a448b5 (CLI improvements)
 #if 0
 	uint8_t i;
 	byte adr[8], data[10];
