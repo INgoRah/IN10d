@@ -21,13 +21,16 @@ struct _sw_tbl sw_tbl[MAX_SWITCHES];
 /* need switch off time! */
 struct _sw_tbl timed_tbl[MAX_TIMED_SWITCH];
 
-static uint8_t bitnumber(uint8_t bitmap)
+
+uint8_t SwitchHandler::bitnumber()
 {
 	int i, res = 1;
 
 	for (i = 0x1; i <= 0x80; i = i << 1) {
-		if (bitmap & i)
+		if (cur_latch & i) {
+			cur_latch -= i;
 			return res;
+		}
 		res++;
 	}
 	/* invalid */
@@ -204,7 +207,7 @@ static struct _timer_item* timerItem(uint8_t data)
  * latch - bit mask to be converted to bit number
  * press - 0: pressing, > 0: press time
  *
- * latch = data[2]
+ * latch = cur_latch (from data[2])
  * press = data[6]
  */
 uint16_t SwitchHandler::srcData(uint8_t busNr, uint8_t adr1)
@@ -215,7 +218,8 @@ uint16_t SwitchHandler::srcData(uint8_t busNr, uint8_t adr1)
 	src.data = 0;
 	src.sa.bus = busNr;
 	src.sa.adr =  adr1 & 0x3f;
-	src.sa.latch = bitnumber(data[2]);
+	// get (the first if multiple) bit which is set
+	src.sa.latch = bitnumber();
 	v = getVersion(src.sa.bus, src.sa.adr);
 
 	if (v < 3 || data[6] == 0xff)
@@ -334,7 +338,8 @@ bool SwitchHandler::setLevel(union pio dst, uint8_t adr[8], uint8_t d, uint8_t i
 	case 2:
 		if (dst.da.bus == 0 && dst.da.adr == 9) {
 			if (dst.da.pio == 0) {
-				level = level * 255 / 100;
+				// scale up 0..15 to 0..255
+				level = level * 17;
 				analogWrite(5, level);
 			}
 		}
@@ -514,7 +519,7 @@ bool SwitchHandler::actorHandle(union d_adr_8 dst, enum _pio_mode mode)
 
 //bool SwitchHandler::actorHandle(union pio p, enum _pio_mode mode)
 
-/* latch in data[2] - bit mask to be converted to bit number
+/* latch in cur_latch - bit mask to be converted to bit number
    uses data[1] for actual IO status
    data[6] for press time */
 bool SwitchHandler::switchHandle(uint8_t busNr, uint8_t adr1)
@@ -596,12 +601,12 @@ bool SwitchHandler::switchHandle(uint8_t busNr, uint8_t adr1)
     return false;
 }
 
-/* latch as bitmask */
+/* latch as bitmask with only one bit set */
 bool SwitchHandler::switchHandle(uint8_t busNr, uint8_t adr1, uint8_t latch, uint8_t mode)
 {
 	this->mode = mode;
 	/* fill data for use in switchHandle */
-	this->data[2] = latch;
+	cur_latch = latch;
 	// ignoring current state of PIOs
 	this->data[1] = 0xff;
 	// no press time info
@@ -644,7 +649,12 @@ bool SwitchHandler::alarmHandler(uint8_t busNr, uint8_t mode)
 		if (adr[0] == 0x29) {
 			/* fill data for use in switchHandle */
 			if (_devs->ds2408RegRead(busNr, adr, data) == 0xaa) {
-				switchHandle(busNr, adr[1]);
+				// loop over all set bits
+				// cur_latch is reduced by each call to bitnumber
+				cur_latch = data[2];
+				do {
+					switchHandle(busNr, adr[1]);
+				} while (cur_latch != 0);
 			}
 		}
 		if (adr[0] == 0x28) {
