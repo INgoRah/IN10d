@@ -5,6 +5,7 @@
 #include "CircularBuffer.h"
 
 #define MODE_WATCHDOG 0x1
+#define HOST_ALRM_PIN 6
 
 #define DS2482_CHANNEL_SELECTION_REGISTER    0xD2	/* DS2482-800 only */
 
@@ -12,11 +13,19 @@
 
 #define STAT_OK 	0x0
 #define STAT_BUSY 	0x01
-#define STAT_FAIL 	0x02
+#define STAT_PROCESSING 	0x2
+#define STAT_NOPE 	0x03
+#define STAT_WRONG 	0x05
+/* ready to service data */
+#define STAT_READY 	0x04
+#define STAT_FAIL 	0xCC
 
 #define STAT_EVT  	0x40
 #define STAT_NO_DATA 0x80
 
+/** Alarm status register read will clear the alarm line, the
+ * watchdog and returns the current alarm status
+ */
 #define DS2482_ALARM_STATUS_REGISTER         0xA8
 #define DS2482_MODE_REGISTER         0x69
 #define DS2482_DATA_REGISTER 0xA9
@@ -39,7 +48,6 @@ struct logData {
 class TwiHost
 {
 	private:
-		byte slaveAdr;
 		uint8_t hostData[12];
 		byte rxBytes;
 		byte seq;
@@ -49,20 +57,21 @@ class TwiHost
 		static void receiveEvent(int howMany);
 		static void requestEvent();
 
-public:
-	CircularBuffer<struct logData, 10> events;
-	bool busy;
+	public:
+		CircularBuffer<struct logData, 10> events;
+		uint8_t status;
 
-	TwiHost(byte slaveAdr);
-	/*static void setReg(uint8_t _reg);*/
-	void setStatus(uint8_t stat);
-	uint8_t getStatus() { return status; };
-	static void setData(uint8_t *data, uint8_t len);
-	void addEvent(uint8_t type, uint16_t source, uint16_t data = 0);
-	void addEvent(uint8_t type, uint8_t bus, uint8_t adr, uint16_t data);
+		TwiHost();
+		void setStatus(uint8_t stat);
+		uint8_t getStatus();
+		static void setData(uint8_t *data, uint8_t len);
+		void addEvent(uint8_t type, uint16_t source, uint16_t data = 0);
+		void addEvent(uint8_t type, uint8_t bus, uint8_t adr, uint16_t data);
 		void addEvent(union pio dst, uint16_t data = 0);
 		void begin(uint8_t slaveAdr);
-	void loop();
-	void onCommand( void (*)(uint8_t, uint8_t) );
+		void loop();
+		void onCommand( void (*)(uint8_t, uint8_t) );
+		void handleAck(uint8_t ack);
 };
+
 #endif

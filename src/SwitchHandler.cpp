@@ -467,7 +467,6 @@ bool SwitchHandler::switchLevel(union pio dst, uint8_t level)
 		return setLevel(dst, adr, d, id, level * 16 / 100);
 	}
 	else {
-		Serial.println (F("Setting PIO"));
 		if (level < 50)
 			return setPio (dst, adr, d, OFF);
 		else
@@ -543,8 +542,6 @@ bool SwitchHandler::switchHandle(uint8_t busNr, uint8_t adr1)
 			if (debug > 1) {
 				Serial.print(F("timer #"));
 				Serial.print(i);
-				Serial.print(" ");
-				Serial.print(src.data, HEX);
 				Serial.print(" -> ");
 			}
 #endif

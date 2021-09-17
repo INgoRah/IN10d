@@ -34,24 +34,22 @@ static uint8_t rdLen, rdPos;
 uint8_t cmd = 0xFF;
 // registers
 static uint8_t reg;
+static uint8_t rxBuf[4];
 
-TwiHost::TwiHost(byte slaveAdr)
+TwiHost::TwiHost()
 {
-	this->slaveAdr = slaveAdr;
+	rdLen = 0;
+	cmd = 0xff;
 }
 
-void TwiHost::begin()
+void TwiHost::begin(uint8_t slaveAdr)
 {
-	cmd = 0xff;
-	rdLen = 0;
-	busy = false;
+	digitalWrite(HOST_ALRM_PIN, HIGH);
+	pinMode(HOST_ALRM_PIN, OUTPUT);
+
 	Wire.begin(slaveAdr);
 	Wire.onReceive(receiveEvent);
 	Wire.onRequest(requestEvent);
-}
-
-void TwiHost::end()
-{
 }
 
 void TwiHost::onCommand( void (*function)(uint8_t, uint8_t) )
@@ -72,11 +70,18 @@ void TwiHost::setStatus(uint8_t stat)
 	status = stat;
 };
 
+uint8_t TwiHost::getStatus()
+{
+	if (events.size() > 0)
+		return (status | STAT_EVT);
+	return status;
+};
+
 void TwiHost::command()
 {
 	switch (cmd)
 	{
-	case 0x01:
+	case CMD_EVT_DATA:
 		if (events.size() > 0) {
 			struct logData d;
 			union s_adr src;
@@ -90,10 +95,11 @@ void TwiHost::command()
 			hostData[4] = src.sa.press;
 			hostData[5] = (d.data & 0xff00) >> 8;
 			hostData[6] = d.data & 0xff;
-			setData((uint8_t*)hostData, 7);
-			setStatus(STAT_OK);
+			hostData[7] = _seq;
+			hostData[8] = 0xAA; // should be crc
+ 			setStatus(STAT_OK);
 		} else
-			host.setStatus(STAT_NO_DATA);
+			setStatus(STAT_NO_DATA);
 		break;
 #if 0
 	case 0x02:
@@ -129,23 +135,24 @@ void TwiHost::command()
 			byte level;
 			union pio dst;
 
+			setStatus(STAT_PROCESSING);
 			dst.data = 0;
-			if (debug > 2) {
+			if (rxBytes < 4) {
+#ifdef EXT_DEBUG
 				Serial.print("rx cnt=");
 				Serial.println(rxBytes);
+				Serial.print("avail=");
+				Serial.println(Wire.available());
+				Serial.println(F("invalid"));
+#endif
+				host.setStatus(STAT_FAIL);
+				return;
 			}
-			bus = Wire.read();
-			dst.da.adr = Wire.read();
-			dst.da.pio = Wire.read();
-			level = Wire.read();
-			/*I2C_READ(bus);
-			I2C_READ(dst.da.adr);
-			I2C_READ(dst.da.pio);
-			I2C_READ(level);
-			*/
-			dst.da.bus = bus;
-
-			if (dst.data == 0) {
+			dst.da.bus = rxBuf[0];
+			dst.da.adr = rxBuf[1];
+			dst.da.pio = rxBuf[2];
+			level = rxBuf[3];
+			if (dst.data == 0 || dst.data == 0xff) {
 				Serial.println(F("invalid"));
 				host.setStatus(STAT_FAIL);
 				return;
@@ -156,16 +163,19 @@ void TwiHost::command()
 				dst.da.type = 0;
 #ifdef EXT_DEBUG
 			if (debug > 1) {
-			Serial.print(dst.da.bus);
-			Serial.print(F("."));
-			Serial.print(dst.da.adr);
-			Serial.print(F("."));
-			Serial.print(dst.da.pio);
-			Serial.print(F(" level="));
-			Serial.println(level);
-	#endif
-			swHdl.switchLevel(dst, level);
-			setStatus(STAT_OK);
+				Serial.print(dst.da.bus);
+				Serial.print(F("."));
+				Serial.print(dst.da.adr);
+				Serial.print(F("."));
+				Serial.print(dst.da.pio);
+				Serial.print(F(" level="));
+				Serial.println(level);
+
+			}
+#endif
+			// switch off I2C slave till done
+			if (swHdl.switchLevel(dst, level))
+				setStatus(STAT_OK);
 			else
 				setStatus(STAT_NOPE);
 			break;
@@ -278,6 +288,7 @@ void TwiHost::addEvent(uint8_t type, uint16_t source, uint16_t data)
 	d.min = min;
 	d.sec = sec;
 	events.push(d);
+	digitalWrite (HOST_ALRM_PIN, LOW);
 };
 
 void TwiHost::addEvent(uint8_t type, uint8_t bus, uint8_t adr, uint16_t data)
@@ -290,7 +301,7 @@ void TwiHost::addEvent(uint8_t type, uint8_t bus, uint8_t adr, uint16_t data)
 	addEvent(type, src.data, data);
 }
 
-void TwiHost::addEvent(union d_adr dst, uint16_t data)
+void TwiHost::addEvent(union pio dst, uint16_t data)
 {
 	union s_adr src;
 	src.data = 0;
@@ -304,6 +315,23 @@ void TwiHost::setData(uint8_t *data, uint8_t len)
 {
 	rdData = data;
 	rdLen = len;
+}
+
+void TwiHost::handleAck(uint8_t ack)
+{
+	if (ack == _seq) {
+		// serviced
+		_ack = ack;
+		Serial.print (F("ACKed "));
+		Serial.println(ack, HEX);
+		host.setStatus(STAT_OK);
+	} else {
+		host.setStatus(STAT_WRONG);
+		Serial.print (F("ACK mismatch "));
+		Serial.print (ack, HEX);
+		Serial.print (F(" != "));
+		Serial.println (_seq, HEX);
+	}
 }
 
 // function that executes whenever data is received from master
@@ -323,7 +351,6 @@ void TwiHost::receiveEvent(int howMany) {
 		Serial.println (d, HEX);
 	}
 	/* assert if not at least 1? */
-	d = Wire.read();
 	switch (d)
 	{
 	case CMD_RESET:
@@ -340,7 +367,7 @@ void TwiHost::receiveEvent(int howMany) {
 	case CMD_SET_READ_PTR:
 		reg = Wire.read();
 		break;
-	case DS2482_CMD_DATA:
+	case CMD_DATA:
 		// host will request data, so just set the register
 		reg = DS2482_DATA_REGISTER;
 		rdPos = 0;
@@ -348,12 +375,15 @@ void TwiHost::receiveEvent(int howMany) {
 		 * calling requestEvent.
 		 * Flag host busy?
 		*/
-		host.setStatus(STAT_BUSY);
+		host.status = STAT_READY;
 		break;
-	case DS2482_CMD_MODE:
+	case CMD_MODE:
 		mode = Wire.read();
 		break;
-	case 1: // get event data
+	case CMD_ACK:
+		host.handleAck(Wire.read());
+		break;
+	case CMD_EVT_DATA: // get event data
 		if (host.events.size() > 0) {
 			host.setStatus(STAT_BUSY);
 			cmd = CMD_EVT_DATA;
@@ -361,7 +391,7 @@ void TwiHost::receiveEvent(int howMany) {
 		else
 			host.setStatus(STAT_NO_DATA);
 		break;
-	case 0x40:
+	case CMD_TIME:
 		hour = Wire.read();
 		min = Wire.read();
 		sun = Wire.read();
@@ -390,11 +420,27 @@ void TwiHost::receiveEvent(int howMany) {
 		I2C_READ(dst.da.pio);
 		/*fall-through */
 	case 4:
+		/* status read ... */
 		// more bytes received, read in loop
 		host.setStatus(STAT_BUSY);
+		/*fall-through */
 	default:
+		Serial.println(F("unkown CMD"));
 		cmd = d;
+		Serial.print (cmd);
+		Serial.print (F(" cmd "));
+		Serial.print (host.rxBytes);
+		Serial.print (F(" pending "));
+		Serial.print("avail=");
+		Serial.print(Wire.available());
+		if (host.rxBytes > 0) {
+			Serial.print (" [");
+			Serial.print (Wire.peek());
+			Serial.print (" ]");
+		}
+		Serial.println();
 		// handle in loop to not block status reads
+#endif
 	}
 	wdTime = millis();
 }
@@ -411,13 +457,13 @@ void TwiHost::requestEvent() {
 		Wire.write(host.getStatus());
 		break;
 	case DS2482_DATA_REGISTER:
-		/* instead write bulk of data should be possible ... */
+		/* write bulk of data */
 		if (rdPos < rdLen && rdData != NULL) {
 			Wire.write(rdData, rdLen);
 			rdPos = rdLen;
 			//Wire.write(rdData[rdPos++]);
 			//if (rdPos == rdLen)
-			host.setStatus(STAT_OK);
+			host.status = STAT_READY;
 		}
 		else {
 			host.setStatus(STAT_NO_DATA);
@@ -432,7 +478,7 @@ void TwiHost::requestEvent() {
 			if (host.events.size() > 0) {
 				stat |= STAT_EVT;
 			}
-			Wire.write(stat | (wdFired << 1));
+			Wire.write((uint8_t)(stat | (wdFired << 1)));
 			if (alarmSignal) {
 				alarmSignal = 0;
 				digitalWrite(13, 0);
