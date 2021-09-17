@@ -205,26 +205,24 @@ void CmdCli::funcPio(CmdParser *myParser)
 	uint8_t level;
 	union pio dst;
 
-<<<<<<< HEAD
-	// channel first
-=======
-	if (myParser->getParamCount() != 4) {
-		Serial.println(F("?"));
+	if (myParser->getParamCount() != 4 && myParser->getParamCount() != 1) {
+		Serial.println(F("(bus adr pio) level !"));
 		return;
 	}
->>>>>>> 7a448b5 (CLI improvements)
-	dst.da.bus = atoi(myParser->getCmdParam(1));
-	dst.da.adr = atoi(myParser->getCmdParam(2));
-	dst.da.pio = atoi(myParser->getCmdParam(3));
+	if (myParser->getParamCount() == 4) {
+		curBus = atoi(myParser->getCmdParam(1));
+		curAdr = atoi(myParser->getCmdParam(2));
+		curPio = atoi(myParser->getCmdParam(3));
 	level = atoi(myParser->getCmdParam(4));
-<<<<<<< HEAD
-		swHdl.switchLevel(dst, level);
-=======
+	} else
+		level = atoi(myParser->getCmdParam(1));
+	dst.da.bus = curBus;
+	dst.da.adr = curAdr;
+	dst.da.pio = curPio;
 	// convenience: 1 instead of typing 100
 	if (level == 1)
 		level = 100;
 	swHdl.switchLevel(dst, level);
->>>>>>> 7a448b5 (CLI improvements)
 #if 0
 	uint8_t i;
 	byte adr[8], data[10];
