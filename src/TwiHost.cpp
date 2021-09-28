@@ -86,6 +86,21 @@ void TwiHost::command()
 			struct logData d;
 			union s_adr src;
 
+			// check for last ack...if not done, do not pop
+			if (_ack != _seq) {
+				if (debug > 2) {
+					Serial.print (F("repeating "));
+					Serial.print (_seq, HEX);
+					Serial.print (F(" last="));
+					Serial.println (_ack, HEX);
+				}
+				setData((uint8_t*)hostData, 9);
+				setStatus(STAT_OK);
+				return;
+			}
+			_seq++;
+			if (_seq == 0x80)
+				_seq = 1;
 			d = events.pop();
 			src.data = d.source;
 			hostData[0] = d.type;
@@ -97,7 +112,7 @@ void TwiHost::command()
 			hostData[6] = d.data & 0xff;
 			hostData[7] = _seq;
 			hostData[8] = 0xAA; // should be crc
- 			setStatus(STAT_OK);
+			setStatus(STAT_OK);
 		} else
 			setStatus(STAT_NO_DATA);
 		break;
@@ -270,6 +285,9 @@ void TwiHost::loop()
 		}
 		rxBytes = 0;
 	}
+	if (host.events.size() > 0) {
+		digitalWrite(HOST_ALRM_PIN, LOW);
+	}
 }
 
 extern uint8_t sec;
@@ -344,17 +362,22 @@ void TwiHost::receiveEvent(int howMany) {
 		(d == CMD_SWITCH || d == CMD_EVT_DATA)) {
 		Serial.print (F("cmd "));
 		Serial.print (cmd);
-		Serial.print (F(" not yet handled | "));
-		Serial.print (F(", Stat  "));
+		Serial.print (F(" not yet handled, Stat  "));
 		Serial.print (host.status, HEX);
 		Serial.print (F(" new "));
 		Serial.println (d, HEX);
+		Serial.print (F("last ACK "));
+		Serial.print (host._ack, HEX);
+		Serial.print (F(" != "));
+		Serial.println (host._seq, HEX);
 	}
 	/* assert if not at least 1? */
 	switch (d)
 	{
 	case CMD_RESET:
 		host.setStatus(STAT_OK);
+		Serial.print (F("reset, cmd "));
+		Serial.print (cmd);
 		cmd = 0xff;
 		break;
 #if 0

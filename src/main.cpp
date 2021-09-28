@@ -44,11 +44,7 @@ A6 - Light sensor (analog)
 					ledOn = 0;
 #define HOST_SLAVE_ADR 0x2f
 
-extern struct _sw_tbl sw_tbl[MAX_SWITCHES];
-
-byte mode;
 byte debug;
-uint8_t hostData[12];
 
 /*
  * Objects
@@ -97,16 +93,6 @@ int i2cRead();
 /*
 * Function definitions
 */
-#if 0
-void wdtAlarm()
-{
-}
-
-void hostCommand(uint8_t cmd, uint8_t data)
-{
-}
-#endif
-
 void setup() {
 	uint8_t mcusr_old;
 
@@ -127,10 +113,8 @@ void setup() {
 	debug = 1;
 	light = 125;
 	Serial.print(F("One Wire Control"));
-	mode = MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH;
 	digitalWrite(3, 1);
 	delay (10);
-	// wdt.onAlarm(wdtAlarm);
 	// host.onCommand(hostCommand);
 	host.begin (HOST_SLAVE_ADR);
 	wdFired = 0;
@@ -256,7 +240,7 @@ void loop()
 	}
 	if (pinSignal) {
 		// interrupt to host
-		swHdl.switchHandle(0, 9, 1, mode);
+		swHdl.switchHandle(0, 9, 1);
 		pinSignal = 0;
 	}
 	/* if there is any host data transfer, avoid conflicts on the I2C bus
@@ -267,12 +251,13 @@ void loop()
 	swHdl.loop();
 	if (alarmSignal) {
 		alarmPolling = millis();
-		if (mode & MODE_ALRAM_HANDLING) {
+		host.setAlarm();
+		if (swHdl.mode & MODE_ALRAM_HANDLING) {
 			byte retry;
 			for (byte i = 0; i < MAX_BUS; i++) {
 				if (wdt[i]->alarm) {
 					retry = 5;
-					while (!swHdl.alarmHandler(i, mode)) {
+					while (!swHdl.alarmHandler(i)) {
 						if (retry-- == 0)
 							break;
 					}
@@ -285,17 +270,19 @@ void loop()
 	}
 	if (millis() - alarmPolling > 2000) {
 		alarmPolling = millis();
-		if (mode & MODE_ALRAM_POLLING) {
+		if (swHdl.mode & MODE_ALRAM_POLLING) {
 			for (byte i = 0; i < MAX_BUS;i++)
-				swHdl.alarmHandler(i, mode);
+				swHdl.alarmHandler(i);
 		}
 	}
-	if (mode & MODE_WATCHDOG && (wdFired == 0 && millis() - wdTime > 5000)) {
+#if 0
+	if (swHdl.mode & MODE_WATCHDOG && (wdFired == 0 && millis() - wdTime > 5000)) {
 		wdFired = 1;
 		Serial.println(F("Watchdog!"));
 		//LED_ON();
 		ledOnTime = millis();
 	}
+#endif
 #ifdef CLI_SUPPORT
 	cli.loop();
 #endif

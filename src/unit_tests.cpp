@@ -44,16 +44,12 @@ extern OneWireBase *ds;
 * Function declarations
 */
 
-extern struct _sw_tbl sw_tbl[MAX_SWITCHES];
-extern struct _sw_tbl timed_tbl[MAX_TIMED_SWITCH];
-extern struct _dim_tbl dim_tbl[MAX_DIMMER];
-
 void testSetup() {
 	Serial.begin(115200);
 
 	Serial.print(F("One Wire Control..."));
 	swHdl.begin(ds);
-
+	light = swHdl.light_thr + 1;
 	PCMSK1 |= (_BV(PCINT8) | _BV(PCINT9) | _BV(PCINT10) | _BV(PCINT11));
     PCIFR |= _BV(PCIF1); // clear any outstanding interrupt
     PCICR |= _BV(PCIE1); // enable interrupt for the group
@@ -101,6 +97,7 @@ void tableSetup()
 
 	// global timer switch (PIR): 0, 2, 4 for level type
 	// dst 3 3 0
+	timed_tbl[0].type = TYPE_DARK_SOFT_30S;
 	timed_tbl[0].src.data = 0;
 	timed_tbl[0].dst.data = 0;
 	timed_tbl[0].src.sa.bus = 0;
@@ -111,6 +108,7 @@ void tableSetup()
 	timed_tbl[0].dst.da.pio = 0;
 	// global timer switch (PIR): 2, 2, 1 for on/off type
 	// dst 2 1 0
+	timed_tbl[0].type = TYPE_DARK_30S;
 	timed_tbl[1].src.data = 0;
 	timed_tbl[1].dst.data = 0;
 	timed_tbl[1].src.sa.bus = 2;
@@ -207,6 +205,7 @@ int MainTest(int test)
 		// dst 3 3 0
 		dadr = timed_tbl[0].dst.da.adr;
 		dpio = timed_tbl[0].dst.da.pio;
+		timed_tbl[0].type = TYPE_DARK_SOFT_30S;
 		pio_data[dadr] = 0x0;
 
 		swHdl.switchHandle(0, 2, 4, MODE_ALRAM_HANDLING | MODE_AUTO_SWITCH);
@@ -283,6 +282,40 @@ int MainTest(int test)
 
 		swHdl.actorHandle(dst, TOGGLE);
 	}
+	/*
+	Case 9:
+	timer on and soft off, level type
+	*/
+	if (test == 9) {
+		// timer switch (PIR): 0, 2, 4 for level type
+		// dst 3 3 0
+		dadr = timed_tbl[0].dst.da.adr;
+		dpio = timed_tbl[0].dst.da.pio;
+		timed_tbl[0].type = TYPE_DARK_SOFT_30S;
+		pio_data[dadr] = 0x0;
+
+		swHdl.switchHandle(0, 2, 4, MODE_ALRAM_HANDLING | MODE_AUTO_SWITCH);
+		if (pio_data[dadr] != 0xF1)
+			return __LINE__;
+		timer0_millis += 25 * 1000 + 100;
+		swHdl.loop(1);
+		// 26
+		timer0_millis += 1000;
+		swHdl.loop(1);
+		// 29
+		timer0_millis += 3000;
+		swHdl.loop(1);
+		timer0_millis += 1000;
+		// off
+		swHdl.loop(1);
+
+		/* this is off!
+		timer0_millis += DEF_SECS * 1000 + 100;
+		swHdl.loop();
+		*/
+		if (pio_data[dadr] != 0x0)
+			return __LINE__;
+	}
 	return 0;
 }
 
@@ -295,7 +328,8 @@ int main()
 	analogWrite(5, 100);
 #endif
 	debug = 4;
-	ret = MainTest(8);
+	light = 220;
+	ret = MainTest(9);
 	for (i = 1; i < 8; i++) {
 		ret = MainTest(i);
 		if (ret) {

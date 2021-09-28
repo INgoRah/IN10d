@@ -50,7 +50,8 @@ class TwiHost
 	private:
 		uint8_t hostData[12];
 		byte rxBytes;
-		byte seq;
+		byte _seq, _ack;
+		uint8_t alarmSignal;
 		static void (*user_onCommand)(uint8_t cmd, uint8_t data);
 		void command();
 
@@ -58,7 +59,7 @@ class TwiHost
 		static void requestEvent();
 
 	public:
-		CircularBuffer<struct logData, 10> events;
+		CircularBuffer<struct logData, 5> events;
 		uint8_t status;
 
 		TwiHost();

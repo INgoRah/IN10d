@@ -20,17 +20,6 @@ WireWatchdog::WireWatchdog(byte owPin)
 	owLowStart = 0;
 	alarm = false;
 	pinMode(owPin, INPUT);
-	this->owPin = owPin;
-}
-
-void WireWatchdog::onFired( void (*function)(void) )
-{
-  user_onFired = function;
-}
-
-void WireWatchdog::onAlarm( void (*function)(void) )
-{
-  user_onAlarm = function;
 }
 
 bool WireWatchdog::alarmCheck()
@@ -46,7 +35,7 @@ bool WireWatchdog::alarmCheck()
 		duration = micros() - owLowStart;
 		owLowStart = 0;
 		if (duration > 800) {
-			//Serial.print(owPin - A0);
+			//Serial.print(pin - A0);
 			alarm = true;
 			return true;
 		}

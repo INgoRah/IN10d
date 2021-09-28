@@ -20,7 +20,7 @@ class OneWireBase
 	protected:
 		uint8_t searchAddress[8];
 		uint8_t searchExhausted;
-	
+
 	public:
 		uint8_t status;
 		uint8_t mAddress;
@@ -30,10 +30,10 @@ class OneWireBase
 		// with a presence pulse.  Returns 0 if there is no device or the
 		// bus is shorted or otherwise held low for more than 250uS
 		virtual bool reset(void);
-		virtual bool configureDev(uint8_t config) { return true; };
+		virtual bool configureDev(uint8_t config) { (void)config; return true; };
 		void resetDev() {};
 		// DS2482-800 only
-		virtual bool selectChannel(uint8_t channel) { return false; };
+		virtual bool selectChannel(uint8_t channel) { (void)channel; return false; };
 
 		// Write a byte. If 'power' is one then the wire is held high at
 		// the end for parasitically powered devices. You are responsible

@@ -10,7 +10,6 @@
 #include <avr/wdt.h>
 
 extern byte debug;
-extern byte mode;
 extern uint8_t min;
 extern uint8_t hour;
 extern uint8_t sun;
