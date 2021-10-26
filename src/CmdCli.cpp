@@ -41,10 +41,6 @@ CmdCli* me;
 static boolean stringComplete = false;  // whether the string is complete
 static String inputString = "";         // a String to hold incoming data
 static OwDevices* ow;
-<<<<<<< HEAD
-static byte curBus;
-static int sw_tbl_len = 0;
-=======
 static byte curBus, curAdr, curPio;
 
 void printDst8(union d_adr_8 dst)
@@ -64,7 +60,6 @@ void printSrc(union s_adr src)
 	Serial.print(F("."));
 	Serial.print(src.sa.press * 10 + src.sa.latch);
 }
->>>>>>> f5a484a (Soft (for dimmer) off and other timer types/times. Now timers are also supported if not dark)
 
 /* Based on code found in https://forum.arduino.cc/index.php?topic=90.0 */
 uint8_t CmdCli::atoh(const char *str, bool prefix)
@@ -105,6 +100,8 @@ void CmdCli::begin(OwDevices* devs)
 	me = this;
 	ow = devs;
 	curBus = 0;
+	curAdr = 0;
+	curPio = 0;
 	cmdCallback.addCmd("srch", &funcSearch);// 1
 	cmdCallback.addCmd("s", &funcStatus); 	// 2
 	cmdCallback.addCmd("mode", &funcMode);	// 3
@@ -189,46 +186,32 @@ void CmdCli::funcStatus(CmdParser *myParser)
 	byte data[10], i;
 	byte adr[8];
 
-<<<<<<< HEAD
-	if (myParser->getParamCount() > 0) {
-		byte adr[8], bus;
-=======
 	if (myParser->getParamCount() > 1) {
->>>>>>> f5a484a (Soft (for dimmer) off and other timer types/times. Now timers are also supported if not dark)
 
-		bus = atoi(myParser->getCmdParam(1));
-		adr[1] = atoi(myParser->getCmdParam(2));
+		curBus = atoi(myParser->getCmdParam(1));
+		curAdr = atoi(myParser->getCmdParam(2));
 		if (myParser->getParamCount() > 2)
 			res = atoi(myParser->getCmdParam(3));
 		else
 			res = false;
-		ow->adrGen(curBus, adr, adr[1]);
+	}
+	ow->adrGen(curBus, adr, curAdr);
 #if EXT_DEBUG
-<<<<<<< HEAD
-		if (debug) {
-			int i;
-			for (i = 0; i < 7; i++) {
-				Serial.print(adr[i], HEX);
-				Serial.print(F(" "));
-			}
-			Serial.println(adr[i], HEX);
-=======
 	if (debug) {
 		for (i = 0; i < 7; i++) {
 			Serial.print(adr[i], HEX);
 			Serial.print(F(" "));
->>>>>>> f5a484a (Soft (for dimmer) off and other timer types/times. Now timers are also supported if not dark)
 		}
-#endif
-		ow->ds2408RegRead(curBus, adr, data, res);
-		Serial.print(F("Data "));
-		for (i = 0; i < 9; i++) {
-			Serial.print(data[i], HEX);
-			Serial.print(F(" "));
-		}
-		Serial.println(data[i], HEX);
-
+		Serial.println(adr[i], HEX);
 	}
+#endif
+	ow->ds2408RegRead(curBus, adr, data, res);
+	Serial.print(F("Data "));
+	for (i = 0; i < 9; i++) {
+		Serial.print(data[i], HEX);
+		Serial.print(F(" "));
+	}
+	Serial.println(data[i], HEX);
 }
 
 void CmdCli::funcPio(CmdParser *myParser)
@@ -244,7 +227,7 @@ void CmdCli::funcPio(CmdParser *myParser)
 		curBus = atoi(myParser->getCmdParam(1));
 		curAdr = atoi(myParser->getCmdParam(2));
 		curPio = atoi(myParser->getCmdParam(3));
-	level = atoi(myParser->getCmdParam(4));
+		level = atoi(myParser->getCmdParam(4));
 	} else
 		level = atoi(myParser->getCmdParam(1));
 	dst.da.bus = curBus;
@@ -311,8 +294,10 @@ void CmdCli::funcTemp(CmdParser *myParser)
 		return;
 	}
 #endif
-	// channel first
-	adr[1] = atoi(myParser->getCmdParam(1));
+	if (myParser->getParamCount() == 2) {
+		curBus = atoi(myParser->getCmdParam(1));
+		curAdr = atoi(myParser->getCmdParam(2));
+	}
 #if 0
 	if (adr[1] > 10) {
 		uint8_t adrt[8] = { 0x28, 0x65, 0x0E, 0xFD, 0x05, 0x00, 0x00, 0x4D };
@@ -326,6 +311,7 @@ void CmdCli::funcTemp(CmdParser *myParser)
 	}
 #endif
 	adr[0] = 0x28;
+	adr[1] = curAdr;
 	ow->adrGen(curBus, adr, adr[1]);
 #if EXT_DEBUG
 	if (debug) {
@@ -389,11 +375,14 @@ void CmdCli::funcCfg(CmdParser *myParser)
 	}
 	ow->adrGen(curBus, adr, adr[1]);
 	if (myParser->getParamCount() == 1) {
-		Serial.print(F("Cfg Read ("));
+		if (adr[0] == 0x28)
+			Serial.println(F(" OFF |FACT |S |IO|TH|TL"));
+		else
+			Serial.println(F("R |R |R |SW 1  2  3  4  5  6  7 |CFG 1 2  3  4  5  6  7 |FEA|OFF|MAJ|MIN|TYP"));
 		len = ow->ds2408CfgRead(curBus, adr, data);
-		Serial.print(len);
-		Serial.print(F(") "));
 		for (i = 0; i < len - 1; i++) {
+			if (data[i] < 10)
+				Serial.print(F("0"));
 			Serial.print(data[i], HEX);
 			Serial.print(F(" "));
 		}

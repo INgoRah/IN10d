@@ -8,12 +8,12 @@
 #define MAX_SWITCHES 4
 #define MAX_TIMED_SWITCH 3
 #else
-#define MAX_TIMER 10
+#define MAX_TIMER 6
 /* per bus 12 addresses and each 5 latches, sometimes long presses additionally */
 #define MAX_SWITCHES MAX_BUS * 12 * 5
 #define MAX_TIMED_SWITCH 10
 #endif
-#define MAX_DIMMER 3
+#define MAX_DIMMER 4
 #define DEF_SECS 30
 
 /* modes */
@@ -169,6 +169,7 @@ class SwitchHandler
 		uint8_t dim_on_lvl;
 		SwitchHandler();
 		SwitchHandler(OwDevices* devs);
+		void status();
 		bool actorHandle(union d_adr_8 dst, enum _pio_mode state);
 		void begin(OneWireBase *ow);
 		void loop();

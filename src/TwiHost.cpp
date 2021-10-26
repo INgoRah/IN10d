@@ -319,14 +319,24 @@ void TwiHost::addEvent(uint8_t type, uint8_t bus, uint8_t adr, uint16_t data)
 	addEvent(type, src.data, data);
 }
 
-void TwiHost::addEvent(union pio dst, uint16_t data)
+void TwiHost::addEvent(union pio dst, uint16_t data, uint8_t type)
 {
 	union s_adr src;
 	src.data = 0;
 	src.sa.bus = dst.da.bus;
 	src.sa.adr = dst.da.adr;
 	src.sa.latch  = dst.da.pio;
-	addEvent(1, src.data, data);
+	addEvent(type, src.data, data);
+}
+
+void TwiHost::addEvent(union d_adr_8 dst, uint16_t data, uint8_t type)
+{
+	union s_adr src;
+	src.data = 0;
+	src.sa.bus = dst.da.bus;
+	src.sa.adr = dst.da.adr;
+	src.sa.latch  = dst.da.pio;
+	addEvent(type, src.data, data);
 }
 
 void TwiHost::setData(uint8_t *data, uint8_t len)
