@@ -237,41 +237,6 @@ void CmdCli::funcPio(CmdParser *myParser)
 	if (level == 1)
 		level = 100;
 	swHdl.switchLevel(dst, level);
-#if 0
-	uint8_t i;
-	byte adr[8], data[10];
-
-	switch (adr[1]) {
-		case 10:
-			static uint8_t target[8] = { 0x3A, 0x01, 0xDA, 0x84, 0x00, 0x00, 0x05, 0xA3 };
-			ow->toggleDs2413 (curBus, target);
-			break;
-		default:
-			ow->adrGen(curBus, adr, adr[1]);
-			ow->ds2408RegRead(curBus, adr, data, false);
-			for (i = 0; i < 9; i++) {
-				Serial.print(data[i], HEX);
-				Serial.print(F(" "));
-			}
-			Serial.println(data[i], HEX);
-			if (myParser->getParamCount() > 2) {
-				Serial.print(F("Level: "));
-				Serial.println(level);
-				if (pio == 1)
-					level = ((level & 0xf) << 4) | pio;
-				else
-					level = 0;
-				ow->ds2408PioSet(curBus, adr, level);
-			} else
-				ow->ds2408TogglePio(curBus, adr, 1 << pio, data);
-			ow->ds2408RegRead(curBus, adr, data, true);
-			for (i = 0; i < 9; i++) {
-				Serial.print(data[i], HEX);
-				Serial.print(F(" "));
-			}
-			Serial.println(data[i], HEX);
-	}
-#endif
 }
 
 void CmdCli::funcTemp(CmdParser *myParser)

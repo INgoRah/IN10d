@@ -12,6 +12,7 @@
 #endif
 #include <avr/sleep.h>
 #include <avr/pgmspace.h>
+#include "main.h"
 
 #if defined(AVRSIM)
 /*
@@ -26,6 +27,8 @@
 #include "OwDevices.h"
 #include "SwitchHandler.h"
 
+extern unsigned long timer0_millis;
+
 /*
  * Local constants
  */
@@ -35,7 +38,7 @@
  */
 extern SwitchHandler swHdl;
 extern OneWireBase *ds;
-
+extern uint8_t pio_data[0x0f];
 /*
  * Local variables
  */
@@ -57,7 +60,6 @@ void testSetup() {
 
 void testLoop()
 {
-
 	swHdl.loop();
 }
 
@@ -134,6 +136,70 @@ int MainTest(int test)
 	uint8_t dadr, dpio;
 
 	testSetup();
+	tableSetup();
+	swHdl.mode = MODE_ALRAM_HANDLING | MODE_AUTO_SWITCH;
+
+	if (test == 1) {
+		/*
+		Case 1:
+		switch #0 on (before off) - and off
+		*/
+		dadr = sw_tbl[0].dst.da.adr;
+		dpio = 1 << sw_tbl[0].dst.da.pio;
+		uint8_t mask = ~dpio;
+		pio_data[dadr] = 0xff;
+		/* bus, id, pio data read, mode */
+		swHdl.switchHandle(0, 1, 2);
+		if (pio_data[dadr] != mask)
+			return __LINE__;
+		testLoop();
+		// off
+		swHdl.switchHandle(0, 1, 2);
+		if (pio_data[dadr] != 0xff)
+			return __LINE__;
+		testLoop();
+	}
+	if (test == 2) {
+		/*
+		Case 2:
+		switch level on ... 2nd ... off
+		*/
+		dadr = sw_tbl[1].dst.da.adr;
+		dpio = sw_tbl[1].dst.da.pio;
+		pio_data[dadr] = 0x0;
+
+		swHdl.switchHandle(0, 1, 4);
+		if (pio_data[dadr] != 0x71)
+			return __LINE__;
+		// check 1st level
+		swHdl.switchHandle(0, 1, 4);
+		if (pio_data[dadr] != 0xf1)
+			return __LINE__;
+		// check 2nd level
+		swHdl.switchHandle(0, 1, 4);
+		// check off
+		if (pio_data[dadr] != 0x0)
+			return __LINE__;
+	}
+	/*
+	Case 3:
+	timer on and off level type
+	*/
+	if (test == 3) {
+		// timer switch (PIR): 0, 2, 4 for level type
+		// dst 3 3 0
+		dadr = timed_tbl[0].dst.da.adr;
+		dpio = timed_tbl[0].dst.da.pio;
+		pio_data[dadr] = 0x0;
+
+		swHdl.switchHandle(0, 2, 4);
+		if (pio_data[dadr] != 0xF1)
+			return __LINE__;
+		timer0_millis += DEF_SECS * 1000 + 100;
+		swHdl.loop();
+		if (pio_data[dadr] != 0x0)
+			return __LINE__;
+	}
 
 	/*
 	Case 4:
@@ -244,26 +310,22 @@ int MainTest(int test)
 		swHdl.switchLevel(p, 100);
 		swHdl.switchLevel(p, 0);
 
-	dst.da.bus = 1;
-	dst.da.adr = 7;
-	dst.da.pio = 1;
-	swHdl.switchLevel(dst, 100);
-	timed_tbl[0].src.data = 0;
-	timed_tbl[0].src.sa.bus = 1;
-	timed_tbl[0].src.sa.adr = 3;
-	timed_tbl[0].src.sa.latch = latch;
-	timed_tbl[0].dst.data = 0;
-	timed_tbl[0].dst.da.adr = 7;
-	timed_tbl[0].dst.da.bus = 2;
-	timed_tbl[0].dst.da.pio = 1;
-	dim_tbl[0].dst.data = timed_tbl[0].dst.data;
-	/*
-	swHdl.switchHandle(1, 3, (1 << (latch - 1)), (320 / 32), MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH);
-	swHdl.switchHandle(1, 3, (1 << (latch - 1)), (320 / 32), MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH);
-	swHdl.switchHandle(1, 3, (1 << (latch - 1)), (320 / 32), MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH);
-	swHdl.switchHandle(1, 3, (1 << (latch - 1)), (320 / 32), MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH);
-	swHdl.switchHandle(1, 3, (1 << (latch - 1)), (320 / 32), MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH);
-	*/
+		timed_tbl[0].src.data = 0;
+		timed_tbl[0].src.sa.bus = 1;
+		timed_tbl[0].src.sa.adr = 3;
+		timed_tbl[0].src.sa.latch = latch;
+		timed_tbl[0].dst.data = 0;
+		timed_tbl[0].dst.da.adr = 7;
+		timed_tbl[0].dst.da.bus = 2;
+		timed_tbl[0].dst.da.pio = 1;
+		dim_tbl[0].dst.data = timed_tbl[0].dst.data;
+		/*
+		swHdl.switchHandle(1, 3, (1 << (latch - 1)), (320 / 32), MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH);
+		swHdl.switchHandle(1, 3, (1 << (latch - 1)), (320 / 32), MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH);
+		swHdl.switchHandle(1, 3, (1 << (latch - 1)), (320 / 32), MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH);
+		swHdl.switchHandle(1, 3, (1 << (latch - 1)), (320 / 32), MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH);
+		swHdl.switchHandle(1, 3, (1 << (latch - 1)), (320 / 32), MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH);
+		*/
 	}
 	if (test == 8) {
 		union d_adr_8 dst;

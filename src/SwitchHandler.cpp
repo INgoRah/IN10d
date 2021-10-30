@@ -366,11 +366,6 @@ static uint8_t getVersion(uint8_t bus, uint8_t adr)
 			break;
 		case 1:
 		default:
-			switch(adr) {
-				case 1:
-				case 11:
-					return 1;
-			}
 			break;
 		case 2:
 			switch(adr) {
@@ -569,6 +564,7 @@ bool SwitchHandler::setPio(union pio dst, uint8_t adr[8], uint8_t d, enum _pio_m
 	}
 #endif
 	if (dst.da.type == 2) {
+		/* special case: our own pin, is a dimmer, no need to handle here */
 		// PIO0: PWM on pin 5
 		// D3 - Relais ouput, negative polarity - active switching GND
 		// D5 - PWM output (dimed LED) via open coollector transistor
@@ -583,16 +579,6 @@ bool SwitchHandler::setPio(union pio dst, uint8_t adr[8], uint8_t d, enum _pio_m
 		else
 			digitalWrite((uint8_t)dst.da.pio, 0);
 #ifdef EXT_DEBUG
-<<<<<<< HEAD
-	if (debug > 2) {
-		Serial.print(F(" pin "));
-		Serial.print(dst.da.pio);
-		if (mode == OFF)
-			Serial.println(F(" OFF"));
-		else
-			Serial.println(F(" ON"));
-	}
-=======
 		if (debug > 2) {
 			Serial.print(F(" pin "));
 			Serial.print(dst.da.pio);
@@ -601,7 +587,6 @@ bool SwitchHandler::setPio(union pio dst, uint8_t adr[8], uint8_t d, enum _pio_m
 			else
 				Serial.println(F(" ON"));
 		}
->>>>>>> f5a484a (Soft (for dimmer) off and other timer types/times. Now timers are also supported if not dark)
 #endif
 		return true;
 	}

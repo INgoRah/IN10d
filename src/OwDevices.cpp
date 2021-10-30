@@ -197,7 +197,9 @@ void OwDevices::toggleDs2413(byte bus, uint8_t* addr)
 	} while (pio != 0xAA);
 }
 
-/* TODO make sure, that the data is correct ... how? */
+/* reads and returns the Output latch state register
+
+TODO make sure, that the data is correct ... how? */
 uint8_t OwDevices::ds2408PioGet(byte bus, uint8_t* addr)
 {
 	uint8_t res, d[10];
@@ -266,28 +268,6 @@ uint8_t OwDevices::ds2408PioSet(byte bus, uint8_t* addr, uint8_t pio)
 }
 
 /**
- * pio - bit mask of the PIO
- * data - optional data from a read before, avoid reading again
- * */
-uint8_t OwDevices::ds2408TogglePio(byte bus, uint8_t* addr, uint8_t pio, uint8_t* data)
-{
-	uint8_t d;
-
-	if (data == NULL)
-		d = ds2408PioGet(bus, addr);
-	else
-		d = data[1];
-	if (d & pio)
-		d &= ~(pio);
-	else
-		d |= pio;
-
-	d = ds2408PioSet(bus, addr, d);
-
-	return d;
-}
-
-/**
  * data - array of min 24 items
  */
 int OwDevices::ds2408CfgRead(byte bus, byte adr[8], uint8_t* data)
@@ -323,7 +303,7 @@ void OwDevices::ds2408CfgWrite(byte bus, byte adr[8], uint8_t* d, uint8_t len)
  * 1: set alarms and reset
  * 2: read temperature and scratchpad
 */
-uint16_t OwDevices::tempRead(byte busNr, byte addr[8], byte mode)
+int16_t OwDevices::tempRead(byte busNr, byte addr[8], byte mode)
 {
 	uint8_t scratchPad[9];
 

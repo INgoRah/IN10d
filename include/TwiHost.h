@@ -32,6 +32,14 @@
 
 #define TYPE_BRIGHTNESS 3
 
+enum {
+	SRC_CHANGE = 0,
+	DST_CHANGE,
+	TEMP_CHANGE,
+	BRIGHTNESS_CHANGE,
+	DIMMING_DOWN
+};
+
 struct logData {
 	byte h;
 	byte min;

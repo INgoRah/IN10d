@@ -50,25 +50,27 @@ class DS2482 : public OneWireBase
 {
 public:
 	//Address is 0-3
+	DS2482() {}
 	DS2482(uint8_t address);
-	
+	~DS2482() {}
+
 	bool configureDev(uint8_t config);
 	void resetDev();
-	
+
 	bool reset(); // return true if presence pulse is detected
 	bool selectChannel(uint8_t channel);
 	uint8_t wireReadStatus(bool setPtr=false);
-	
+
 	uint8_t write(uint8_t b, uint8_t power = 0 );
 	uint8_t read();
-	
+
 	void wireWriteBit(uint8_t bit);
 	uint8_t wireReadBit();
     // Issue a 1-Wire rom select command, you do the reset first.
     void select(const  uint8_t rom[8]);
 	// Issue skip rom
 	void skip();
-	
+
 	uint8_t hasTimeout() { return status == stTimeout; }
 #if ONEWIRE_SEARCH
     // Clear the search state so that if will start from the beginning again.
@@ -84,14 +86,14 @@ public:
 #endif
 
 private:
-	
+
 	uint8_t _read();
 	void setReadPtr(uint8_t readPtr);
-	
+
 	uint8_t busyWait(bool setPtr=false); //blocks until
 	void begin();
 	void end();
-	
+
 };
 
 #endif
