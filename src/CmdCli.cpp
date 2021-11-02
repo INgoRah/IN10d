@@ -43,13 +43,23 @@ static String inputString = "";         // a String to hold incoming data
 static OwDevices* ow;
 static byte curBus, curAdr, curPio;
 
-void printDst8(union d_adr_8 dst)
+void printDst(union pio dst)
 {
 	Serial.print(dst.da.bus, HEX);
 	Serial.print(F("."));
 	Serial.print(dst.da.adr, HEX);
 	Serial.print(F("."));
 	Serial.print(dst.da.pio, HEX);
+}
+
+void printDst8(union d_adr_8 dst)
+{
+	union pio p;
+	p.da.bus = dst.da.bus;
+	p.da.adr = dst.da.adr;
+	p.da.pio = dst.da.pio;
+
+	printDst(p);
 }
 
 void printSrc(union s_adr src)
@@ -162,15 +172,32 @@ void CmdCli::funcBus(CmdParser *myParser)
 
 void CmdCli::funcSearch(CmdParser *myParser)
 {
-	int i, res;
+	int res, k;
+	byte adr[8];
+	bool alarm = true;
 
-	(void)myParser;
-	for (i = 0; i < 4; i++) {
+	if (myParser->getParamCount() > 0)
+		alarm = false;
+	for (k = 0; k < 4; k++) {
 		Serial.print(F("== Ch "));
-		Serial.print(i);
+		Serial.print(k);
 		Serial.println(F(" =="));
 		wdt_reset();
-		res = ow->search(i);
+		ds->selectChannel(k);
+		ds->reset();
+		ds->reset_search();
+		res = 0;
+		while (ds->search(adr, alarm)) {
+			res++;
+			Serial.print(F("#"));
+			Serial.print(res);
+			Serial.print(F(":"));
+			for (int i = 0; i < 8; i++) {
+				Serial.print(F(" "));
+				Serial.print(adr[i], HEX);
+			}
+			Serial.println();
+		}
 		if (res > 0) {
 			Serial.print(res);
 			Serial.println(F(" devs found"));
@@ -291,9 +318,13 @@ void CmdCli::funcTemp(CmdParser *myParser)
 	ow->tempRead (curBus, adr, 0);
 	delay(100);
 	temp = ow->tempRead (curBus, adr, 1);
-	Serial.print((float)(temp / 16));
+	float f = temp / 16.0;
+	Serial.print(f);
 	Serial.println(F(" C"));
-
+	Serial.print(F(" Raw = 0x"));
+	Serial.print(temp, HEX);
+	Serial.print(F(" / "));
+	Serial.println(temp);
 }
 
 void CmdCli::funcMode(CmdParser *myParser)
@@ -746,8 +777,12 @@ void CmdCli::funcLog(CmdParser *myParser)
 		src.data = d.source;
 		Serial.print(d.h);
 		Serial.print(F(":"));
+		if (d.min < 10)
+			Serial.print(F("0"));
 		Serial.print(d.min);
 		Serial.print(F(":"));
+		if (d.sec < 10)
+			Serial.print(F("0"));
 		Serial.print(d.sec);
 		Serial.print(F(" "));
 		Serial.print(d.type);
@@ -762,6 +797,7 @@ void CmdCli::funcLog(CmdParser *myParser)
 		Serial.print(F(" "));
 		Serial.println(d.data);
 	}
+	swHdl.status();
 }
 #endif
 

@@ -214,13 +214,13 @@ int MainTest(int test)
 		dpio = sw_tbl[2].dst.da.pio;
 		pio_data[dadr] = 0xff;
 		// switch on
-		swHdl.switchHandle(0, 2, 2, MODE_ALRAM_HANDLING | MODE_AUTO_SWITCH);
+		swHdl.switchHandle(0, 2, 2);
 		if (pio_data[dadr] != 0xfe)
 			return __LINE__;
 		// timer switch (PIR): 0, 2, 4 for level type
 		// must be ignored because already switched on
 		// no timer started
-		swHdl.switchHandle(2, 2, 1, MODE_ALRAM_HANDLING | MODE_AUTO_SWITCH);
+		swHdl.switchHandle(2, 2, 1);
 		// no change!
 		if (pio_data[dadr] != 0xfe)
 			return __LINE__;
@@ -230,7 +230,7 @@ int MainTest(int test)
 		if (pio_data[dadr] != 0xfe)
 			return __LINE__;
 		// switch off
-		swHdl.switchHandle(0, 2, 2, MODE_ALRAM_HANDLING | MODE_AUTO_SWITCH);
+		swHdl.switchHandle(0, 2, 2);
 		if (pio_data[dadr] != 0xff)
 			return __LINE__;
 	}
@@ -243,11 +243,11 @@ int MainTest(int test)
 		dpio = sw_tbl[1].dst.da.pio;
 		pio_data[dadr] = 0x0;
 		// switch on
-		swHdl.switchHandle(0, 1, 4, MODE_ALRAM_HANDLING | MODE_AUTO_SWITCH);
+		swHdl.switchHandle(0, 1, 4);
 		if (pio_data[dadr] != 0x71)
 			return __LINE__;
 		// no try to trigger the timer
-		swHdl.switchHandle(0, 2, 4, MODE_ALRAM_HANDLING | MODE_AUTO_SWITCH);
+		swHdl.switchHandle(0, 2, 4);
 		if (pio_data[dadr] != 0x71)
 			return __LINE__;
 		timer0_millis += DEF_SECS * 1000 + 1000;
@@ -255,10 +255,10 @@ int MainTest(int test)
 		if (pio_data[dadr] != 0x71)
 			return __LINE__;
 		// switch off
-		swHdl.switchHandle(0, 1, 4, MODE_ALRAM_HANDLING | MODE_AUTO_SWITCH);
+		swHdl.switchHandle(0, 1, 4);
 		if (pio_data[dadr] != 0xf1)
 			return __LINE__;
-		swHdl.switchHandle(0, 1, 4, MODE_ALRAM_HANDLING | MODE_AUTO_SWITCH);
+		swHdl.switchHandle(0, 1, 4);
 		if (pio_data[dadr] != 0x00)
 			return __LINE__;
 	}
@@ -274,12 +274,12 @@ int MainTest(int test)
 		timed_tbl[0].type = TYPE_DARK_SOFT_30S;
 		pio_data[dadr] = 0x0;
 
-		swHdl.switchHandle(0, 2, 4, MODE_ALRAM_HANDLING | MODE_AUTO_SWITCH);
+		swHdl.switchHandle(0, 2, 4);
 		if (pio_data[dadr] != 0xF1)
 			return __LINE__;
 		timer0_millis += DEF_SECS * 500 + 100;
 		swHdl.loop();
-		swHdl.switchHandle(0, 2, 4, MODE_ALRAM_HANDLING | MODE_AUTO_SWITCH);
+		swHdl.switchHandle(0, 2, 4);
 		if (pio_data[dadr] != 0xF1)
 			return __LINE__;
 		timer0_millis += DEF_SECS * 500 + 100;
@@ -356,20 +356,21 @@ int MainTest(int test)
 		timed_tbl[0].type = TYPE_DARK_SOFT_30S;
 		pio_data[dadr] = 0x0;
 
-		swHdl.switchHandle(0, 2, 4, MODE_ALRAM_HANDLING | MODE_AUTO_SWITCH);
+		swHdl.mode = MODE_ALRAM_HANDLING | MODE_AUTO_SWITCH;
+		swHdl.switchHandle(0, 2, 4);
 		if (pio_data[dadr] != 0xF1)
 			return __LINE__;
 		timer0_millis += 25 * 1000 + 100;
-		swHdl.loop(1);
+		swHdl.loop();
 		// 26
 		timer0_millis += 1000;
-		swHdl.loop(1);
+		swHdl.loop();
 		// 29
 		timer0_millis += 3000;
-		swHdl.loop(1);
+		swHdl.loop();
 		timer0_millis += 1000;
 		// off
-		swHdl.loop(1);
+		swHdl.loop();
 
 		/* this is off!
 		timer0_millis += DEF_SECS * 1000 + 100;
@@ -377,6 +378,40 @@ int MainTest(int test)
 		*/
 		if (pio_data[dadr] != 0x0)
 			return __LINE__;
+	}
+	/*
+	Case 10:
+	simple pin change event
+	*/
+	if (test == 10) {
+		byte pinSignal;
+		static uint8_t pind_old = _BV(PD4);
+		uint8_t pind;
+
+		/* just check for changes pd7 to high */
+		/* report on change to high level */
+		pind = (_BV(PD4) | _BV(PD7));
+		Serial.print(pind, HEX);
+		if (pind & _BV(PD7) && (pind_old & _BV(PD7)) == 0)
+			pinSignal |= 0x4;
+		Serial.print(pinSignal, HEX);
+		pind_old = _BV(PD4) | _BV(PD7);
+		// pd7 goes to low
+		pind = _BV(PD4);
+		Serial.print(pind, HEX);
+		if (pind & _BV(PD7) && pind_old & _BV(PD7) == 0)
+			pinSignal |= 0x4;
+		Serial.print(pinSignal, HEX);
+		pind_old = _BV(PD4);
+
+		// pd4 goes low
+		pind = 0;
+		//pind = 0 & ~pind_old;
+		Serial.print(pind, HEX);
+		/* report on change to low level */
+		if (((pind & _BV(PD4)) == 0) && (pind_old & _BV(PD4)))
+			pinSignal |= 0x2;
+		Serial.print(pinSignal, HEX);
 	}
 	return 0;
 }
@@ -391,7 +426,7 @@ int main()
 #endif
 	debug = 4;
 	light = 220;
-	ret = MainTest(9);
+	ret = MainTest(10);
 	for (i = 1; i < 8; i++) {
 		ret = MainTest(i);
 		if (ret) {

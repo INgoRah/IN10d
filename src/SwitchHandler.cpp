@@ -1,4 +1,5 @@
 #include <main.h>
+#include "CmdCli.h"
 #include "SwitchHandler.h"
 #include "OwDevices.h"
 #include <TwiHost.h>
@@ -29,6 +30,7 @@ SwitchHandler::SwitchHandler()
 	for (int i = 0; i < MAX_TIMER; i++) {
 		tmr_list[i].secs = 0;
 	}
+	cur_latch = 0;
 	/* default level for PIR detection on */
 	dim_on_lvl = 15;
 	light_thr = 215;
@@ -175,6 +177,9 @@ bool SwitchHandler::timerUpdate(union d_adr_8 dst, uint8_t typ)
 #define HOUR * (60 * 60)
 
 	switch (t) {
+		case 0:
+			secs = 1;
+			break;
 		default:
 		case 1:
 			secs = 30;
@@ -227,11 +232,8 @@ bool SwitchHandler::timerUpdate(union d_adr_8 dst, uint8_t typ)
 			tmr->ms = millis();
 #ifdef EXT_DEBUG
 			if (debug > 1) {
-				Serial.print(dst.da.bus);
-				Serial.write('.');
-				Serial.print(dst.da.adr);
-				Serial.write('.');
-				Serial.println(dst.da.pio);
+				printDst8(dst);
+				Serial.println();
 			}
 #endif
 			return true;
@@ -239,6 +241,24 @@ bool SwitchHandler::timerUpdate(union d_adr_8 dst, uint8_t typ)
 	}
 
 	return false;
+}
+
+void SwitchHandler::status()
+{
+	for (int i = 0; i < MAX_TIMER; i++) {
+		struct _timer_item* tmr = &tmr_list[i];
+
+		Serial.print(F("timer #"));
+		Serial.print(i);
+		Serial.print(F(": sec="));
+		Serial.print(tmr->secs);
+		Serial.print(F(" ms="));
+		Serial.print(tmr->ms);
+		Serial.print(F(" id="));
+		Serial.print(tmr->id);
+		Serial.print(F(" type="));
+		Serial.println(tmr->base_type);
+	}
 }
 
 uint8_t SwitchHandler::dimDown(struct _timer_item* tmr, uint8_t hsec)
@@ -253,16 +273,19 @@ uint8_t SwitchHandler::dimDown(struct _timer_item* tmr, uint8_t hsec)
 	level = dim_tbl[tmr->id].level;
 	if (tmr->dst.da.adr == 9 && tmr->dst.da.bus == 0) {
 		/* dim down every 100 ms */
-		level -= 5;
-		analogWrite(5, level);
-		if (level == 0) {
-			host.addEvent (p, level);
-			/* final off stop timer */
-			tmr->secs  = 0;
+		if (level < 4)
+			level = 0;
+		else {
+			if (level > 200)
+				level -= 8;
+			else
+				level -= 4;
 		}
+		analogWrite(5, level);
 	} else {
 		if (hsec != 0)
 			return level;
+		if (level > 0)
 		level--;
 		switchLevelStep (p, level);
 	}
@@ -271,16 +294,18 @@ uint8_t SwitchHandler::dimDown(struct _timer_item* tmr, uint8_t hsec)
 		Serial.println(level);
 	}
 	dim_tbl[tmr->id].level = level;
-	if (level == 0)
+	if (level == 0) {
 		/* final off stop timer */
 		tmr->secs  = 0;
+		host.addEvent (p, level);
+	}
 
 	return level;
 }
 
 /**
- * sec - set on one second tick
- * */
+ * Responsible for timer handling and dimming down if required
+ */
 void SwitchHandler::loop()
 {
 	int i;
@@ -298,21 +323,27 @@ void SwitchHandler::loop()
 	for (i = 0; i < MAX_TIMER; i++) {
 		struct _timer_item* tmr = &tmr_list[i];
 
-		if (tmr->secs == 0 && tmr->ms == 0)
+		if (tmr->ms == 0) {
+			if (tmr->secs == 0)
+				/* nothing to do */
+				continue;
+			else
+				dimDown(tmr, hsec_time);
 			continue;
+		}
 		/* this is the off state handling, timer expired */
 		if (millis() > tmr->ms + (tmr->secs * 1000)) {
-			if (tmr->ms != 0) {
 				if (debug > 2) {
 					Serial.print(F("timer off "));
 					Serial.println(tmr->secs);
 				}
 				// off state, could be soft off
 				tmr->ms = 0;
-			}
 			/* not yet off, dimming or blinking? */
-			if (tmr->base_type == TYPE_DARK_SOFT)
+			if (tmr->base_type == TYPE_DARK_SOFT) {
 				dimDown(tmr, hsec_time);
+				host.addEvent (tmr->dst, 255, DIMMING_DOWN);
+			}
 			else {
 				/* final off stop timer */
 				tmr->secs  = 0;
@@ -435,10 +466,10 @@ uint16_t SwitchHandler::srcData(uint8_t busNr, uint8_t adr1)
 		else
 			Serial.print(src.sa.latch);
 		Serial.print(F(" "));
-		if (debug > 1) {
+		if (debug > 1 && data[6] != 0xff) {
 			Serial.print(F(" time="));
-			Serial.println(data[6] * 32);
-		} else
+			Serial.print(data[6] * 32);
+		}
 			Serial.println();
 	}
 #endif
@@ -453,6 +484,9 @@ uint8_t SwitchHandler::dimStage(uint8_t dim)
 			return 7;
 		case 7:
 			return 15;
+		// for the internal one
+		case 7 * 17:
+			return 15 * 17;
 		default:
 			return 0;
 	}
@@ -500,9 +534,7 @@ bool SwitchHandler::setLevel(union pio dst, uint8_t adr[8], uint8_t d, uint8_t i
 	default:
 #ifdef EXT_DEBUG
 		if (debug > 1) {
-			Serial.print(dst.da.bus);
-			Serial.print(F("."));
-			Serial.print(adr[1]);
+			printDst(dst);
 			Serial.print(F(" = "));
 			Serial.print(d, HEX);
 		}
@@ -555,13 +587,8 @@ bool SwitchHandler::setPio(union pio dst, uint8_t adr[8], uint8_t d, enum _pio_m
 	uint8_t pio, r;
 
 #ifdef EXT_DEBUG
-	if (debug > 2) {
-		Serial.print(dst.da.bus);
-		Serial.print(F("."));
-		Serial.print(dst.da.adr);
-		Serial.print(F("."));
-		Serial.print(dst.da.pio);
-	}
+	if (debug > 2)
+		printDst(dst);
 #endif
 	if (dst.da.type == 2) {
 		/* special case: our own pin, is a dimmer, no need to handle here */
@@ -574,20 +601,21 @@ bool SwitchHandler::setPio(union pio dst, uint8_t adr[8], uint8_t d, enum _pio_m
 		if (dst.da.pio == 0 || dst.da.pio == 2 || dst.da.pio == 5)
 			return false;
 
-		if (state == OFF)
-			digitalWrite((uint8_t)dst.da.pio, 1);
-		else
-			digitalWrite((uint8_t)dst.da.pio, 0);
+		uint8_t pin = dst.da.pio;
 #ifdef EXT_DEBUG
 		if (debug > 2) {
 			Serial.print(F(" pin "));
-			Serial.print(dst.da.pio);
+			Serial.print(pin);
 			if (state == OFF)
-				Serial.println(F(" OFF"));
+				Serial.print(F(" OFF"));
 			else
-				Serial.println(F(" ON"));
+				Serial.print(F(" ON"));
 		}
 #endif
+		if (state == OFF)
+			digitalWrite(pin, 1);
+		else
+			digitalWrite(pin, 0);
 		return true;
 	}
 	/* turn to bitmask (da.pio = 0,1,2 >> pio = 1,2,4) */
@@ -705,12 +733,25 @@ bool SwitchHandler::actorHandle(union d_adr_8 dst, enum _pio_mode state)
 		case TOGGLE:
 			// toggle level: off - 1 - 2 - off
 			dim = dimStage(dim);
+			if (dim == 0){
+#ifdef EXT_DEBUG
+				if (debug > 4)
+					Serial.println(F("Off -> dimming down"));
+#endif
+				timerUpdate(dst, TYPE_DARK_SOFT);
+				return true;
+			} else
 			return setLevel (p, adr, d, id, dim);
 		case ON:
-			if (dim == max_lvl)
+			if (dim == max_lvl) {
 				/* was on before, don't start timer */
+#ifdef EXT_DEBUG
+				if (debug > 2)
+					Serial.print(F("was on"));
+#endif
 				return false;
-			return setLevel(p, adr, d, id, dim_on_lvl);
+			}
+			return setLevel(p, adr, d, id, max_lvl);
 		case OFF:
 		default:
 			return setLevel(p, adr, d, id, 0);
@@ -731,7 +772,7 @@ bool SwitchHandler::switchHandle(uint8_t busNr, uint8_t adr1)
 	uint8_t i;
 
 	src.data = srcData(busNr, adr1);
-	host.addEvent (0, src.data, data[1]);
+	host.addEvent (SRC_CHANGE, src.data, data[0]);
 
 	// todo: signal alarm only here once the data is available
 	if ((mode & MODE_AUTO_SWITCH) == 0)
@@ -870,7 +911,8 @@ bool SwitchHandler::alarmHandler(uint8_t busNr)
 					Serial.print(F("."));
 					Serial.print(adr[1]);
 					Serial.print(F(": "));
-					Serial.println(c);
+					Serial.print(c / 16.0);
+					Serial.println(F(" C"));
 				}
 #endif
 #if 0

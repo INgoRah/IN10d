@@ -9,6 +9,7 @@
 #define CMD_RESET               0xF0	/* No param */
 #define CMD_CHANNEL_SELECT      0xC3	/* Param: Channel byte - DS2482-800 only */
 #define CMD_MODE                0x69 /* Param: mode byte */
+#define CMD_SW_CFG             0x6A /* Param: light threshold byte | default dim light on level */
 #define CMD_SET_READ_PTR        0xE1	/* Param: DS2482_PTR_CODE_xxx */
 #define CMD_DATA 0x96
 #define CMD_TIME 0x40
@@ -24,7 +25,6 @@ extern SwitchHandler swHdl;
 
 extern byte alarmSignal, wdFired, ledOn;
 extern unsigned long ledOnTime;
-extern unsigned long wdTime;
 
 void (*TwiHost::user_onCommand)(uint8_t, uint8_t);
 
@@ -69,6 +69,23 @@ void TwiHost::setStatus(uint8_t stat)
 	reg = DS2482_STATUS_REGISTER;
 	status = stat;
 };
+
+void TwiHost::setAlarm(uint8_t alarm)
+{
+	if (alarm) {
+		if (alarmSignal == 0) {
+			alarmSignal = 1;
+			digitalWrite(13, 1);
+		}
+	}
+	else {
+		if (alarmSignal) {
+			alarmSignal = 0;
+			digitalWrite(13, 0);
+		}
+	}
+}
+
 
 uint8_t TwiHost::getStatus()
 {
@@ -350,8 +367,10 @@ void TwiHost::handleAck(uint8_t ack)
 	if (ack == _seq) {
 		// serviced
 		_ack = ack;
+		if (debug > 2) {
 		Serial.print (F("ACKed "));
 		Serial.println(ack, HEX);
+		}
 		host.setStatus(STAT_OK);
 	} else {
 		host.setStatus(STAT_WRONG);
@@ -370,7 +389,7 @@ void TwiHost::receiveEvent(int howMany) {
 	d = Wire.read();
 	if (cmd != 0xff &&
 		(d == CMD_SWITCH || d == CMD_EVT_DATA)) {
-		Serial.print (F("cmd "));
+		Serial.print (F(" cmd "));
 		Serial.print (cmd);
 		Serial.print (F(" not yet handled, Stat  "));
 		Serial.print (host.status, HEX);
@@ -411,7 +430,11 @@ void TwiHost::receiveEvent(int howMany) {
 		host.status = STAT_READY;
 		break;
 	case CMD_MODE:
-		mode = Wire.read();
+		swHdl.mode = Wire.read();
+		break;
+	case CMD_SW_CFG:
+		swHdl.light_thr = Wire.read();
+		swHdl.dim_on_lvl = Wire.read();
 		break;
 	case CMD_ACK:
 		host.handleAck(Wire.read());
@@ -475,7 +498,6 @@ void TwiHost::receiveEvent(int howMany) {
 		// handle in loop to not block status reads
 #endif
 	}
-	wdTime = millis();
 }
 
 // function that executes whenever data is requested by master
@@ -484,7 +506,7 @@ void TwiHost::requestEvent() {
 	switch (reg)
 	{
 	case DS2482_MODE_REGISTER:
-		Wire.write(mode);
+		Wire.write(swHdl.mode);
 		break;
 	case DS2482_STATUS_REGISTER:
 		Wire.write(host.getStatus());
@@ -505,17 +527,15 @@ void TwiHost::requestEvent() {
 		break;
 	case DS2482_ALARM_STATUS_REGISTER:
 		{
-			uint8_t stat = alarmSignal;
+			uint8_t stat = host.alarmSignal;
 
 			digitalWrite(HOST_ALRM_PIN, HIGH);
 			if (host.events.size() > 0) {
 				stat |= STAT_EVT;
 			}
-			Wire.write((uint8_t)(stat | (wdFired << 1)));
-			if (alarmSignal) {
-				alarmSignal = 0;
-				digitalWrite(13, 0);
-			}
+			Wire.write((uint8_t)(stat /*| (wdFired << 1)*/ ));
+			host.setAlarm(0);
+#if 0
 			if (wdFired) {
 				digitalWrite(13, 0);
 				ledOnTime = 0;
@@ -523,8 +543,8 @@ void TwiHost::requestEvent() {
 				Serial.println(F("reset WDT"));
 				wdFired = 0;
 			}
+#endif
 			break;
 		}
 	}
-	wdTime = millis();
 }
