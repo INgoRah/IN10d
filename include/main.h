@@ -8,6 +8,7 @@
 #include "pins_arduino.h"	// for digitalPinToBitMask, etc
 #endif
 #include <avr/wdt.h>
+#include "version.h"
 
 extern byte debug;
 extern uint8_t min;
