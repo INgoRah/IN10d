@@ -3,6 +3,8 @@
 .vscode/ipch
 .vscode/*
 .vscode/*.json
+include/version.h
 Notes.md
 *.code-workspace
+*.orig
 post_extra_script.py

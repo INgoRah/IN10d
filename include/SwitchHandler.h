@@ -154,15 +154,11 @@ class SwitchHandler
 		uint8_t dataRead(union pio dst, uint8_t adr[8]);
 		uint8_t dimStage(uint8_t dim);
 		uint8_t getType(union pio dst);
-<<<<<<< HEAD
-
-=======
 		uint8_t bitnumber();
 		bool timerUpdate(union d_adr_8 dst, uint8_t typ);
 		uint8_t dimDown(struct _timer_item* tmr, uint8_t hsec);
 		uint8_t dimLevel(union pio dst, uint8_t* id);
 		uint8_t dimLevel(union d_adr_8 dst, uint8_t* id);
->>>>>>> f5a484a (Soft (for dimmer) off and other timer types/times. Now timers are also supported if not dark)
 	public:
 		uint8_t mode;
 		uint8_t light_thr;
