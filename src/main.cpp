@@ -8,6 +8,8 @@
 #include <avr/pgmspace.h>
 #include <avr/wdt.h>
 
+#include "version.h"
+
 #define wdr wdt_reset
 
 /*
@@ -115,7 +117,8 @@ void setup() {
 
 	debug = 1;
 	light = 125;
-	Serial.print(F("One Wire Control"));
+	Serial.print(F("One Wire Control "));
+	Serial.print(F(VERS_TAG));
 	digitalWrite(3, 1);
 	pinMode(3, OUTPUT);
 	pinMode(4, INPUT_PULLUP);
