@@ -25,20 +25,28 @@
 #include "SwitchHandler.h"
 
 /*
+Used pins:
+D2 - Internal PIR, maps to 0.9.1
+D3 - Relais ouput, negative polarity - active switching GND, maps to 0.9.3
+D4 - Misc Alarm PIN, maps to 0.9.2
+D5 - PWM output (dimed LED) via open coollector transistor, maps to 0.9.0
+D6 - used for alarm signal to host (class TwiHost)
+D7 - External PIR, maps to 0.9.4
+D13 - built in LED
+A0..A4 - 1-wire monitor
+A6 - Light sensor (analog)
+*/
+
+/*
  * Local constants
  */
-
 #define LED_ON() digitalWrite(13, 1); \
 					ledOn = 1;
 #define LED_OFF() digitalWrite(13, 0); \
 					ledOn = 0;
 #define HOST_SLAVE_ADR 0x2f
 
-extern struct _sw_tbl sw_tbl[MAX_SWITCHES];
-
-byte mode;
 byte debug;
-uint8_t hostData[12];
 
 /*
  * Objects
@@ -53,8 +61,8 @@ uint8_t sec;
 uint8_t min;
 uint8_t hour;
 uint8_t sun;
-uint16_t light;
-byte light_sensor = 0;
+uint8_t light;
+byte light_sensor = 1;
 
 #if !defined(AVRSIM)
 
@@ -72,7 +80,6 @@ CmdCli cli;
  * Local variables
  */
 byte alarmSignal, pinSignal, wdFired, ledOn = 0;
-unsigned long ledOnTime = 0;
 unsigned long wdTime = 0;
 static unsigned long alarmPolling = 0;
 uint8_t *hostBuf = NULL;
@@ -80,23 +87,15 @@ uint8_t *hostBuf = NULL;
 /*
 * Function declarations
 */
+#ifdef EXT_DEBUG
 static void ledBlink();
+unsigned long ledOnTime = 0;
+#endif
 int i2cRead();
-
 
 /*
 * Function definitions
 */
-#if 0
-void wdtAlarm()
-{
-}
-
-void hostCommand(uint8_t cmd, uint8_t data)
-{
-}
-#endif
-
 void setup() {
 	uint8_t mcusr_old;
 
@@ -115,12 +114,13 @@ void setup() {
 	Serial.begin(115200);
 
 	debug = 1;
-	light = 700;
+	light = 125;
 	Serial.print(F("One Wire Control"));
-	mode = MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH;
-
+	digitalWrite(3, 1);
+	pinMode(3, OUTPUT);
+	pinMode(4, INPUT_PULLUP);
+	pinMode(7, INPUT);
 	delay (10);
-	// wdt.onAlarm(wdtAlarm);
 	// host.onCommand(hostCommand);
 	host.begin (HOST_SLAVE_ADR);
 	wdFired = 0;
@@ -128,8 +128,10 @@ void setup() {
 	ow.begin(ds);
 	//Wire.setWireTimeout(250, true);
 	swHdl.begin(ds);
+	/* enable interrupts for the 1-wire monitor */
 	PCMSK1 |= (_BV(PCINT8) | _BV(PCINT9) | _BV(PCINT10) | _BV(PCINT11));
-	PCMSK2 |= (_BV(PCINT18) /*| _BV(PCINT19) | _BV(PCINT20) | _BV(PCINT21)*/);
+	/* enable interupts on PD2, 4 and 7 (= D2, D4, D7) */
+	PCMSK2 |= (_BV(PCINT18) | _BV(PCINT20) | _BV(PCINT23));
 	PCIFR |= _BV(PCIF1) | _BV(PCIF2); // clear any outstanding interrupt
 	PCICR |= _BV(PCIE1) | _BV(PCIE2); // enable interrupt for the group
 
@@ -138,32 +140,6 @@ void setup() {
 	alarmPolling = millis();
 #ifdef CLI_SUPPORT
 	cli.begin(&ow);
-#endif
-#if 0
-	unsigned int Ctemp;
-    /* Setup ADC to use int 1.1V reference
-    and select temp sensor channel */
-    ADMUX = (1<<REFS1) | (1<<REFS0) | (1<<MUX3);
-    /* Set conversion time to
-    112usec = [(1/(8Mhz / 64)) * (14 ADC clocks  per conversion)]
-     and enable the ADC*/
-    ADCSRA = (1<<ADPS2) | (1<<ADPS1) | (1<<ADEN);
-	delay (10);
-    /* Perform Dummy Conversion to complete ADC init */
-    ADCSRA |= (1<<ADSC);
-	/* wait for conversion to complete */
-	while ((ADCSRA & (1<<ADSC)) != 0)	;
-
-	ADCSRA |= (1<<ADSC);
-	/* wait for conversion to complete */
-	while ((ADCSRA & (1<<ADSC)) != 0)	;
-
-	Ctemp = ADC;
-	Serial.print (Ctemp, HEX);
-	Serial.print(" ");
-	Serial.print (Ctemp * 0.89286 - 284.42);
-	Serial.println(" C");
-	ADCSRA = 0;	// disable ADC
 #endif
 	wdt_enable(WDTO_2S);
 }
@@ -176,23 +152,42 @@ ISR (PCINT1_vect) // handle pin change interrupt for A0 to A4 here
 	for (i = 0; i < MAX_BUS; i++) {
 		if (wdt[i]->alarmCheck()) {
 			alarmSignal++;
+#ifdef EXT_DEBUG
 			ledOnTime = millis();
 			LED_ON();
+#endif
 		}
 	}
 	/* */
 	wdTime = millis();
 }
 
-/* Connector on D2 (PD2), D3 (PD4) - custom wire D4 (PD5), D5 (PD6) */
+/* Connector on D2 (PD2 / PIR internal)
+   D7 (PD7 / PIR external)
+   custom wire D4 (PD4 / external Alarm) */
 ISR (PCINT2_vect) // handle pin change interrupt for A0 to A4 here
 {
-	if (PIND & _BV(PD2))
+	static uint8_t pind_old = 0;
+	uint8_t pind;
+
+	/* just check for changes */
+	pind = PIND;
+	/* check for change to high */
+	if ((pind & _BV(PD2)) && (pind_old & _BV(PD2)) == 0)
 		pinSignal |= 1;
+	if ((pind & _BV(PD7)) && (pind_old & _BV(PD7)) == 0)
+		pinSignal |= 0x4;
+
+	/* report on change to low level */
+	if (((pind & _BV(PD4)) == 0) && (pind_old & _BV(PD4)))
+		pinSignal |= 0x2;
+
+	pind_old = pind;
 }
 
 static void ledBlink()
 {
+#ifdef EXT_DEBUG
 	if (millis() - ledOnTime > 300) {
 		if (ledOn) {
 			ledOnTime = millis();
@@ -203,6 +198,7 @@ static void ledBlink()
 			ledOnTime = millis();
 		}
 	}
+#endif
 }
 
 void loop()
@@ -221,10 +217,17 @@ void loop()
 		if (sec++ == 60) {
 			sec = 0;
 			if (light_sensor) {
+				uint16_t t;
+
 				ADCSRA = (1<<ADPS2) | (1<<ADPS1) | (1<<ADEN);
 				_delay_us (100);
-				light = analogRead(A6);
+				t = analogRead(A6);
 				ADCSRA = 0;
+				t = (t >> 2) & 0xFE;
+				if (light != t) {
+					light = t;
+					host.addEvent (TYPE_BRIGHTNESS, 0, 9, light);
+				}
 			}
 			if (min++ == 60) {
 
@@ -234,12 +237,19 @@ void loop()
 			}
 		}
 	}
+#ifdef EXT_DEBUG
 	if (ledOnTime != 0 && !alarmSignal) {
 		ledBlink();
 	}
+#endif
 	if (pinSignal) {
 		// interrupt to host
-		swHdl.switchHandle(0, 9, 1, mode);
+		if (pinSignal & 0x1)
+			swHdl.switchHandle(0, 9, 1);
+		if (pinSignal & 0x2)
+			swHdl.switchHandle(0, 9, 0x2);
+		if (pinSignal & 0x4)
+			swHdl.switchHandle(0, 9, 0x8);
 		pinSignal = 0;
 	}
 	/* if there is any host data transfer, avoid conflicts on the I2C bus
@@ -250,15 +260,13 @@ void loop()
 	swHdl.loop();
 	if (alarmSignal) {
 		alarmPolling = millis();
-		if (debug > 2) {
-			Serial.println(F("Alarm"));
-		}
-		if (mode & MODE_ALRAM_HANDLING) {
+		host.setAlarm();
+		if (swHdl.mode & MODE_ALRAM_HANDLING) {
 			byte retry;
 			for (byte i = 0; i < MAX_BUS; i++) {
 				if (wdt[i]->alarm) {
 					retry = 5;
-					while (!swHdl.alarmHandler(i, mode)) {
+					while (!swHdl.alarmHandler(i)) {
 						if (retry-- == 0)
 							break;
 					}
@@ -271,17 +279,19 @@ void loop()
 	}
 	if (millis() - alarmPolling > 2000) {
 		alarmPolling = millis();
-		if (mode & MODE_ALRAM_POLLING) {
+		if (swHdl.mode & MODE_ALRAM_POLLING) {
 			for (byte i = 0; i < MAX_BUS;i++)
-				swHdl.alarmHandler(i, mode);
+				swHdl.alarmHandler(i);
 		}
 	}
-	if (mode & MODE_WATCHDOG && (wdFired == 0 && millis() - wdTime > 5000)) {
+#if 0
+	if (swHdl.mode & MODE_WATCHDOG && (wdFired == 0 && millis() - wdTime > 5000)) {
 		wdFired = 1;
 		Serial.println(F("Watchdog!"));
 		//LED_ON();
 		ledOnTime = millis();
 	}
+#endif
 #ifdef CLI_SUPPORT
 	cli.loop();
 #endif

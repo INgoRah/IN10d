@@ -1,23 +1,37 @@
-Arduino 1-Wire Homeautomation Fallback
+Arduino 1-Wire Homeautomation Base
 
 # Changes
 [x] timer based control (different switch table?). Use CLI sw t <bus> <adr> <latch> <bus> <adr> <pio>.
     Default 30 secs at the moment
 [x] Host IF for switch table
 [x] Host IF for control
+[x] Host GPIO signal verified
+[x] Switch with same dst does not clear timer if running.
+[x] Log latch and switch
 
 # Bugs
-[ ] Host GPIO signal not yet verified / maybe not working
-[ ] Switch with same dst does not clear timer if running. 
     Pressing a button to permanently switch on light is not working
+    setting level = 100 turns light off
 
 # TodDo
 [ ] (ongoing) Timer based on light with configurable threshold
 [ ] Custom timer time per switch
-[ ] Host IF alarm indication debugging with PI
-[ ] Host IF for status read
-
+[ ] (ongoing) Host IF for status read
+[ ] Light independed timed switch. Currently timed switches only if dark
 # Documentation
+
+# Build
+Create a post_extra_script.py to copy over to PI:
+Import("env", "projenv")
+env.AddPostAction(
+    "$BUILD_DIR/${PROGNAME}.elf",
+    env.VerboseAction(" ".join([
+        "scp ",
+        "$BUILD_DIR/${PROGNAME}.hex", "<user>@<ip>:<path>/${PROGNAME}.hex"
+    ]), "Copying $BUILD_DIR/${PROGNAME}.hex")
+)
+
+Debugging with "simulation" target
 
 ## Main Tasks
 Monitors 1-Wire lines for incoming interrupts (alarms) to be used instead of polling.
@@ -60,11 +74,14 @@ starts a lookup in the timer table and switch table for commands.
 ### Measures to overcome limitations
 Still the lookup table could be too large and this needs to be mitigated.
 - fixed or stable switches in program space: easy to access via different table
+  or use custom bootloader for flash storing option
 - lookup in EEPROM: cache EEPROM or create new look up table (bus|adr = 4 x 31 lines returns dst by latch index),  max 1 KB
+
+## CLI examples
 
 ## I2C format
 C3 - channel select like in DS2482
-F0 - reset 
+F0 - reset
 69 - mode selection: [2] [4]
 5A - search first device, wait for search cycle for reading, returns 0 if nothing found or | id | adr [8]
 5B - search next device, returns 0 if nothing found or | id | adr [8]
@@ -76,3 +93,18 @@ status: alarm bus 3 | alarm bus 2 | alarm bus 1 | alarm bus0
 bus select
 read out alarm : adr | latch
 read out status : write adr | read PIO
+
+### Host Communication
+
+On GPIO low, read status register
+Set read pointer:
+    Write 0xE1 0xE1
+Read one byte (status)
+If event data (0x40)
+    write 0x1
+    status changes to BUSY, wait for OK or NO_DATA
+    on ok send read data request
+    write 0x96
+    read data (on event 9 bytes): type, bus, adr, latch, press, 16 bit data, seq, 0xaa
+    seq: 1..0x7f
+    read status again and repeat if needed

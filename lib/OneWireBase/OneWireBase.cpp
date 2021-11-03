@@ -65,7 +65,7 @@ bool  OneWire::search(uint8_t *newAddr)
  searchJunction = lastJunction;                    // set searchJunction for the next call to Search
 
  for ( i = 0; i < 8; i++) newAddr[i] = address[i]; // copy found address into output address
- return 1;  
+ return 1;
 }
 #endif
 

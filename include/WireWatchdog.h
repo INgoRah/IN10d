@@ -19,7 +19,6 @@
 class WireWatchdog
 {
 	private:
-		byte owPin;
 		volatile IO_REG_TYPE *reg_;
 		IO_REG_TYPE mask_;
 		unsigned long owLowStart;
@@ -31,8 +30,6 @@ class WireWatchdog
 	public:
 		WireWatchdog(byte owPin);
 		bool alarm;
-		void onFired( void (*)(void) );
-		void onAlarm( void (*)(void) );
 		bool alarmCheck();
 };
 
