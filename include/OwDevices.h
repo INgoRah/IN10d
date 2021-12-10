@@ -2,6 +2,7 @@
 #define _OWDEVICES_H
 
 #include <OneWireBase.h>
+#include "main.h"
 
 #define MAX_CFG_SIZE 26
 /** Retries for register read */
@@ -13,6 +14,8 @@ class OwDevices
 {
 	private:
 		OneWireBase *ow;
+		uint8_t	pio_data[MAX_BUS][MAX_ADR];
+
 	public:
 		OwDevices() {;}
 		void begin(OneWireBase *ds);

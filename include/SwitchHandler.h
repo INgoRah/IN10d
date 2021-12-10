@@ -2,7 +2,6 @@
 #include "OwDevices.h"
 
 /* config */
-#define MAX_BUS 3
 #ifdef AVRSIM
 #define MAX_TIMER 2
 #define MAX_SWITCHES 4

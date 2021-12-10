@@ -8,7 +8,7 @@
 #include <avr/pgmspace.h>
 #include <avr/wdt.h>
 
-#include "version.h"
+#include "main.h"
 
 #define wdr wdt_reset
 

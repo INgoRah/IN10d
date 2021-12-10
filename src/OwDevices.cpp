@@ -48,6 +48,9 @@ void OwDevices::begin(OneWireBase *ds)
 	ow = ds;
 	ow->resetDev();
 	ow->configureDev(DS2482_CONFIG_APU);
+	for (int i = 0; i < MAX_BUS; i++)
+		for (int j = 0; j < MAX_ADR; j++)
+			pio_data[i][j] = 0xff;
 }
 
 void OwDevices::adrGen(uint8_t bus, uint8_t adr[8], uint8_t id)
@@ -134,10 +137,12 @@ uint8_t OwDevices::ds2408RegRead(byte bus, uint8_t* addr, uint8_t* data, bool la
 	} while (retry-- > 0);
 	if (data[5] == 0xff)
 		return 0xff;
+	// TODO update cache here?
+	pio_data[bus][addr[1] & 0x0f] = data[1];
 	if (!latch_reset)
 		return 0xaa;
-
 	tmp = ds2408LatchReset(addr);
+
 	if (tmp != 0xAA)
 		Serial.println(F("latch reset error"));
 
@@ -204,6 +209,9 @@ uint8_t OwDevices::ds2408PioGet(byte bus, uint8_t* addr)
 {
 	uint8_t res, d[10];
 
+	if (pio_data[bus][addr[1] & 0x0f] != 0)
+		return 	pio_data[bus][addr[1] & 0x0f];
+
 #if defined(AVRSIM)
 	return pio_data[addr[1] & 0x0f];
 #endif
@@ -212,7 +220,8 @@ uint8_t OwDevices::ds2408PioGet(byte bus, uint8_t* addr)
 	if (res != 0xaa) {
 		Serial.print("Read error: ");
 		Serial.println(res, HEX);
-	}
+	} else
+		pio_data[bus][addr[1] & 0x0f] = d[1];
 
 	return d[1];
 #if 0
@@ -260,8 +269,11 @@ uint8_t OwDevices::ds2408PioSet(byte bus, uint8_t* addr, uint8_t pio)
 		Serial.print(F("data "));
 		Serial.print(pio, HEX);
 		Serial.println(F(" write error"));
-	} else
-		ds2408LatchReset(addr);
+		return r;
+	}
+	ds2408LatchReset(addr);
+	// TODO update cache
+	pio_data[bus][addr[1] & 0x0f] = pio;
 
 	return r;
 #endif
@@ -360,6 +372,8 @@ int16_t OwDevices::tempRead(byte busNr, byte addr[8], byte mode)
 	//// default is 12 bit resolution, 750 ms conversion time
 	// to be done by caller if needed
   	// celsius = (float)raw / 16.0;
-
+	if (scratchPad[5] != 0xFF) {
+		// got also humidity
+	}
 	return raw;
 }
