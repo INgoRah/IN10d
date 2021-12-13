@@ -270,22 +270,8 @@ void CmdCli::funcTemp(CmdParser *myParser)
 {
 	byte adr[8];
 	uint16_t temp;
-#if 0
-	if (myParser->getParamCount() == 0) {
-		uint8_t adrt[8] = { 0x28, 0x65, 0x0E, 0xFD, 0x05, 0x00, 0x00, 0x4D };
-		float temp;
-		byte bus;
+	uint8_t hum;
 
-		bus = 0;
-		ow->tempRead (bus, adrt, 0);
-		delay(200);
-		temp = ow->tempRead (bus, adrt, 1);
-		Serial.print(temp / 16);
-		Serial.println(F(" C"));
-
-		return;
-	}
-#endif
 	if (myParser->getParamCount() == 2) {
 		curBus = atoi(myParser->getCmdParam(1));
 		curAdr = atoi(myParser->getCmdParam(2));
@@ -294,7 +280,7 @@ void CmdCli::funcTemp(CmdParser *myParser)
 	if (adr[1] > 10) {
 		uint8_t adrt[8] = { 0x28, 0x65, 0x0E, 0xFD, 0x05, 0x00, 0x00, 0x4D };
 
-		ow->tempRead (curBus, adrt, 0);
+		ow->tempRead (curBus, adrt);
 		delay(800);
 		temp = ow->tempRead (curBus, adrt, 1);
 		Serial.print((float)(temp / 16));
@@ -315,16 +301,18 @@ void CmdCli::funcTemp(CmdParser *myParser)
 		Serial.println(adr[i], HEX);
 	}
 #endif
-	ow->tempRead (curBus, adr, 0);
+	ow->tempRead (curBus, adr);
 	delay(100);
-	temp = ow->tempRead (curBus, adr, 1);
+	temp = ow->tempRead (curBus, adr, 1, &hum);
 	float f = temp / 16.0;
 	Serial.print(f);
-	Serial.println(F(" C"));
-	Serial.print(F(" Raw = 0x"));
-	Serial.print(temp, HEX);
-	Serial.print(F(" / "));
-	Serial.println(temp);
+	Serial.print(F(" C"));
+	if (hum != 0xff) {
+		Serial.print(F(" / "));
+		Serial.print(hum);
+		Serial.print(F(" %"));
+	}
+	Serial.println();
 }
 
 void CmdCli::funcMode(CmdParser *myParser)

@@ -213,7 +213,7 @@ uint8_t OwDevices::ds2408PioGet(byte bus, uint8_t* addr)
 		return 	pio_data[bus][addr[1] & 0x0f];
 
 #if defined(AVRSIM)
-	return pio_data[addr[1] & 0x0f];
+	return pio_data[bus][addr[1] & 0x0f];
 #endif
 
 	res = ds2408RegRead(bus, addr, d, false);
@@ -245,7 +245,7 @@ uint8_t OwDevices::ds2408PioGet(byte bus, uint8_t* addr)
 uint8_t OwDevices::ds2408PioSet(byte bus, uint8_t* addr, uint8_t pio)
 {
 #if defined(AVRSIM)
-	pio_data[addr[1] & 0x0f] = pio;
+	pio_data[bus][addr[1] & 0x0f] = pio;
 	return 0xAA;
 #else
 	uint8_t r, retry;
@@ -315,7 +315,7 @@ void OwDevices::ds2408CfgWrite(byte bus, byte adr[8], uint8_t* d, uint8_t len)
  * 1: set alarms and reset
  * 2: read temperature and scratchpad
 */
-int16_t OwDevices::tempRead(byte busNr, byte addr[8], byte mode)
+int16_t OwDevices::tempRead(byte busNr, byte addr[8], byte mode, uint8_t* hum)
 {
 	uint8_t scratchPad[9];
 
@@ -372,8 +372,8 @@ int16_t OwDevices::tempRead(byte busNr, byte addr[8], byte mode)
 	//// default is 12 bit resolution, 750 ms conversion time
 	// to be done by caller if needed
   	// celsius = (float)raw / 16.0;
-	if (scratchPad[5] != 0xFF) {
-		// got also humidity
-	}
+	if (hum != NULL)
+		*hum = scratchPad[5];
+
 	return raw;
 }

@@ -30,7 +30,7 @@ class OwDevices
 		uint8_t ds2408TogglePio(byte bus, uint8_t* addr, uint8_t pio, uint8_t* data = NULL);
 		void ds2408CfgWrite(byte bus, byte adr[8], uint8_t* d, uint8_t len);
 		int ds2408CfgRead(byte bus, byte adr[8], uint8_t* data);
-		int16_t tempRead(byte busNr, byte addr[8], byte mode = 2);
+		int16_t tempRead(byte busNr, byte addr[8], byte mode = 0, uint8_t* hum = NULL);
 };
 
 #endif

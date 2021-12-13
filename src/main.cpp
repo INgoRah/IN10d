@@ -251,8 +251,10 @@ void loop()
 			swHdl.switchHandle(0, 9, 1);
 		if (pinSignal & 0x2)
 			swHdl.switchHandle(0, 9, 0x2);
+#if 0
 		if (pinSignal & 0x4)
 			swHdl.switchHandle(0, 9, 0x8);
+#endif
 		pinSignal = 0;
 	}
 	/* if there is any host data transfer, avoid conflicts on the I2C bus
