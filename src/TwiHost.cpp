@@ -368,8 +368,8 @@ void TwiHost::handleAck(uint8_t ack)
 		// serviced
 		_ack = ack;
 		if (debug > 2) {
-		Serial.print (F("ACKed "));
-		Serial.println(ack, HEX);
+			Serial.print (F("ACKed "));
+			Serial.println(ack, HEX);
 		}
 		host.setStatus(STAT_OK);
 	} else {

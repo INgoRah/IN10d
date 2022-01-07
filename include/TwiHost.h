@@ -79,8 +79,8 @@ class TwiHost
 		static void setData(uint8_t *data, uint8_t len);
 		void addEvent(uint8_t type, uint16_t source, uint16_t data = 0);
 		void addEvent(uint8_t type, uint8_t bus, uint8_t adr, uint16_t data);
-		void addEvent(union pio dst, uint16_t data = 0, uint8_t type = 1);
-		void addEvent(union d_adr_8 dst, uint16_t data = 0, uint8_t type = 1);
+		void addEvent(union pio dst, uint16_t data = 0, uint8_t type = DST_CHANGE);
+		void addEvent(union d_adr_8 dst, uint16_t data = 0, uint8_t type = DST_CHANGE);
 		void begin(uint8_t slaveAdr);
 		void loop();
 		void onCommand( void (*)(uint8_t, uint8_t) );

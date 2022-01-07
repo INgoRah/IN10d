@@ -399,7 +399,7 @@ int MainTest(int test)
 		// pd7 goes to low
 		pind = _BV(PD4);
 		Serial.print(pind, HEX);
-		if (pind & _BV(PD7) && pind_old & _BV(PD7) == 0)
+		if (pind & _BV(PD7) && (pind_old & _BV(PD7)) == 0)
 			pinSignal |= 0x4;
 		Serial.print(pinSignal, HEX);
 		pind_old = _BV(PD4);
@@ -426,7 +426,7 @@ int main()
 #endif
 	debug = 4;
 	light = 220;
-	ret = MainTest(10);
+
 	for (i = 1; i < 8; i++) {
 		ret = MainTest(i);
 		if (ret) {

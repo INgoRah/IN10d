@@ -5,7 +5,7 @@
 #include <CmdParser.hpp>
 #include "OwDevices.h"
 
-#define CLI_NR_BASE 10
+#define CLI_NR_BASE 9
 #ifdef EXT_DEBUG
 #define CLI_NR CLI_NR_BASE + 3
 #else

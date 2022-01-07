@@ -155,9 +155,12 @@ class SwitchHandler
 		uint8_t getType(union pio dst);
 		uint8_t bitnumber();
 		bool timerUpdate(union d_adr_8 dst, uint8_t typ);
-		uint8_t dimDown(struct _timer_item* tmr, uint8_t hsec);
+		uint8_t dimDown(struct _timer_item* tmr);
 		uint8_t dimLevel(union pio dst, uint8_t* id);
 		uint8_t dimLevel(union d_adr_8 dst, uint8_t* id);
+		bool switchLevelStep(union pio dst, uint8_t level);
+		bool setPio(union pio dst, uint8_t adr[8], uint8_t d, enum _pio_mode state);
+		bool setLevel(union pio dst, uint8_t adr[8], uint8_t* d, uint8_t id, uint8_t level);
 	public:
 		uint8_t mode;
 		uint8_t light_thr;
@@ -174,7 +177,4 @@ class SwitchHandler
 		bool switchHandle(uint8_t busNr, uint8_t adr1);
 		bool switchHandle(uint8_t busNr, uint8_t adr1, uint8_t latch);
 		bool switchLevel(union pio dst, uint8_t level);
-		bool switchLevelStep(union pio dst, uint8_t level);
-		bool setPio(union pio dst, uint8_t adr[8], uint8_t d, enum _pio_mode state);
-		bool setLevel(union pio dst, uint8_t adr[8], uint8_t id, uint8_t d, uint8_t level);
 };

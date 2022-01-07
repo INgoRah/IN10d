@@ -149,8 +149,10 @@ uint8_t OwDevices::ds2408RegRead(byte bus, uint8_t* addr, uint8_t* data, bool la
 	return tmp;
 }
 
+/* Send channel data - currently not used */
 uint8_t OwDevices::ds2408ChWrite(byte bus, uint8_t* addr, uint8_t* data, int cnt)
 {
+#if 0
 	uint8_t r;
 	int i;
 
@@ -166,7 +168,7 @@ uint8_t OwDevices::ds2408ChWrite(byte bus, uint8_t* addr, uint8_t* data, int cnt
 			Serial.print(r, HEX);
 		}
 	}
-
+#endif
 	return 0xaa;
 }
 

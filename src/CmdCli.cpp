@@ -118,18 +118,17 @@ void CmdCli::begin(OwDevices* devs)
 	cmdCallback.addCmd("p", &funcPio);		// 4
 	cmdCallback.addCmd("bus", &funcBus); 	// 5
 	cmdCallback.addCmd("cfg", &funcCfg);	// 6
-	cmdCallback.addCmd("c", &funcCmd);		// 7
-	cmdCallback.addCmd("sw", &funcSwCmd);	// 8
-	cmdCallback.addCmd("t", &funcTemp);		// 9
-#ifdef CHGID_CMD
-	cmdCallback.addCmd("id", &funcChgId);		// 10
-#endif
-
+	cmdCallback.addCmd("sw", &funcSwCmd);	// 7
+	cmdCallback.addCmd("t", &funcTemp);		// 8
 	//cmdCallback.addCmd("time", &funcTime);
+	//cmdCallback.addCmd("c", &funcCmd);		// 9
 #ifdef EXT_DEBUG
-	cmdCallback.addCmd("pset", &funcPinSet);
-	cmdCallback.addCmd("pget", &funcPinGet);
-	cmdCallback.addCmd("log", &funcLog);
+	cmdCallback.addCmd("pset", &funcPinSet); // 9
+	cmdCallback.addCmd("pget", &funcPinGet); // 10
+	cmdCallback.addCmd("log", &funcLog); // 11
+#endif
+#ifdef CHGID_CMD
+	cmdCallback.addCmd("id", &funcChgId);		// 9 or 12
 #endif
 	// reserve bytes for the inputString
 	inputString.reserve(MAX_CMD_BUFSIZE);
@@ -398,7 +397,7 @@ void CmdCli::funcCfg(CmdParser *myParser)
 }
 
 /*
-
+Send different amount of data - not actively used
 Examples:
 c 7 1 f8 1f ff ff WOHNEN
 c 7 2 00 00 f8 00 18.6
@@ -421,6 +420,7 @@ c 7 a 84 10 00 00 11:42
 
 c 7 8 07 ff 00 00 STURM
 */
+#if 0
 void CmdCli::funcCmd(CmdParser *myParser)
 {
 	byte d;
@@ -473,6 +473,7 @@ void CmdCli::funcCmd(CmdParser *myParser)
 	}
 	Serial.println();
 }
+#endif
 
 void CmdCli::dumpSwTbl(void)
 {
