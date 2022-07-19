@@ -195,6 +195,7 @@ void TwiHost::command()
 				dst.da.type = 0;
 #ifdef EXT_DEBUG
 			if (debug > 1) {
+				log_time();
 				Serial.print(dst.da.bus);
 				Serial.print(F("."));
 				Serial.print(dst.da.adr);
