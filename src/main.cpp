@@ -65,6 +65,7 @@ uint8_t hour;
 uint8_t sun;
 uint8_t light;
 byte light_sensor = 1;
+uint16_t pow_imp;
 
 #if !defined(AVRSIM)
 
@@ -72,7 +73,7 @@ WireWatchdog wdt0(A0);
 WireWatchdog wdt1(A1);
 WireWatchdog wdt2(A2);
 WireWatchdog wdt3(A3);
-WireWatchdog* wdt[MAX_BUS] = { &wdt0, &wdt1, &wdt2/*, &wdt3*/ };
+WireWatchdog* wdt[MAX_BUS] = { &wdt0, &wdt1, &wdt2, &wdt3 };
 
 #ifdef CLI_SUPPORT
 CmdCli cli;
@@ -94,6 +95,20 @@ static void ledBlink();
 unsigned long ledOnTime = 0;
 #endif
 int i2cRead();
+
+void log_time()
+{
+		Serial.print(hour);
+		Serial.print(F(":"));
+		if (min < 10)
+			Serial.print(F("0"));
+		Serial.print(min);
+		Serial.print(F(":"));
+		if (sec < 10)
+			Serial.print(F("0"));
+		Serial.print(sec);
+		Serial.print(F(" "));
+}
 
 /*
 * Function definitions
@@ -118,7 +133,7 @@ void setup() {
 	debug = 1;
 	light = 125;
 	Serial.print(F("One Wire Control "));
-	Serial.print(F(VERS_TAG));
+	Serial.println(F(VERS_TAG));
 	digitalWrite(3, 1);
 	pinMode(3, OUTPUT);
 	pinMode(4, INPUT_PULLUP);
@@ -131,6 +146,8 @@ void setup() {
 	ow.begin(ds);
 	//Wire.setWireTimeout(250, true);
 	swHdl.begin(ds);
+	/* enable interupts on PB0 (= D8) */
+	PCMSK0 |= (_BV(PCINT0));
 	/* enable interrupts for the 1-wire monitor */
 	PCMSK1 |= (_BV(PCINT8) | _BV(PCINT9) | _BV(PCINT10) | _BV(PCINT11));
 	/* enable interupts on PD2, 4 and 7 (= D2, D4, D7) */
@@ -145,6 +162,17 @@ void setup() {
 	cli.begin(&ow);
 #endif
 	wdt_enable(WDTO_2S);
+}
+
+/* interupt on PORTB:
+ PB0 (= D8): Power Interval (500/1 KWh = 2 Wh) */
+ISR (PCINT0_vect)
+{
+	uint8_t pinb;
+
+	pinb = PINB;
+	if ((pinb & _BV(PB0)) == 0)
+		pinSignal |= 0x8;
 }
 
 /* interrupt handling for change on 1-wire */
@@ -178,8 +206,9 @@ ISR (PCINT2_vect) // handle pin change interrupt for A0 to A4 here
 	/* check for change to high */
 	if ((pind & _BV(PD2)) && (pind_old & _BV(PD2)) == 0)
 		pinSignal |= 1;
-	if ((pind & _BV(PD7)) && (pind_old & _BV(PD7)) == 0)
-		pinSignal |= 0x4;
+	//if ((pind & _BV(PD7)) && (pind_old & _BV(PD7)) == 0)
+	if ((pind & _BV(PD7)) == 0)
+		pinSignal |= 0x8;
 
 	/* report on change to low level */
 	if (((pind & _BV(PD4)) == 0) && (pind_old & _BV(PD4)))
@@ -223,12 +252,12 @@ void loop()
 				uint16_t t;
 
 				ADCSRA = (1<<ADPS2) | (1<<ADPS1) | (1<<ADEN);
-				_delay_us (100);
+				_delay_us (150);
 				t = analogRead(A6);
 				ADCSRA = 0;
 				t = (t >> 2) & 0xFE;
 				if (light != t) {
-					light = t;
+					light = (4 * light + t) / 5;;
 					host.addEvent (TYPE_BRIGHTNESS, 0, 9, light);
 				}
 			}
@@ -255,6 +284,14 @@ void loop()
 		if (pinSignal & 0x4)
 			swHdl.switchHandle(0, 9, 0x8);
 #endif
+		if (pinSignal & 0x8) {
+			log_time();
+			if (debug > 3)
+				Serial.println(F("Count"));
+			pow_imp++;
+			host.addEvent (POWER_IMP, 0, 9, pow_imp);
+		}
+
 		pinSignal = 0;
 	}
 	/* if there is any host data transfer, avoid conflicts on the I2C bus

@@ -163,9 +163,11 @@ void SwitchHandler::begin(OneWireBase *ow)
 	dim_tbl[1].dst.da.bus = 0;
 	dim_tbl[1].dst.da.adr = 9;
 	dim_tbl[1].dst.da.pio = 0;
+#if 0
 	/* dimmer 3 */
 	dim_tbl[2].dst.da.bus = 1;
 	dim_tbl[2].dst.da.adr = 3;
+#endif
 }
 
 bool SwitchHandler::timerUpdate(union d_adr_8 dst, uint8_t typ)
@@ -322,6 +324,7 @@ void SwitchHandler::loop()
 		/* this is the off state handling, timer expired */
 		if (millis() > tmr->ms + (tmr->secs * 1000)) {
 				if (debug > 2) {
+					log_time();
 					Serial.print(F("timer off "));
 					Serial.println(tmr->secs);
 				}
@@ -456,7 +459,7 @@ uint16_t SwitchHandler::srcData(uint8_t busNr, uint8_t adr1)
 			Serial.print(F(" time="));
 			Serial.print(data[6] * 32);
 		}
-			Serial.println();
+		Serial.println();
 	}
 #endif
 
@@ -594,9 +597,9 @@ bool SwitchHandler::setPio(union pio dst, uint8_t adr[8], uint8_t d, enum _pio_m
 			Serial.print(F(" pin "));
 			Serial.print(pin);
 			if (state == OFF)
-				Serial.print(F(" OFF"));
+				Serial.println(F(" OFF"));
 			else
-				Serial.print(F(" ON"));
+				Serial.println(F(" ON"));
 		}
 #endif
 		if (state == OFF)
@@ -640,7 +643,7 @@ bool SwitchHandler::setPio(union pio dst, uint8_t adr[8], uint8_t d, enum _pio_m
 		else
 			Serial.print(F(" ON"));
 		Serial.print(F(" -> "));
-		Serial.print(d, HEX);
+		Serial.println(d, HEX);
 	}
 #endif
 
@@ -787,8 +790,14 @@ bool SwitchHandler::switchHandle(uint8_t busNr, uint8_t adr1)
 				  p->dst.data == 0xFF))  {
 				/* get the type and check for light if needed */
 				if (light < light_thr && p->type > TYPE_DARK) {
-					if (debug > 2)
-						Serial.println(F("not dark"));
+					if (debug > 1) {
+						Serial.print(F("not dark "));
+						Serial.print(light);
+						Serial.print(F(" < "));
+						Serial.print(light_thr);
+						Serial.print(F(", TYP "));
+						Serial.println(p->type);
+					}
 					continue;
 				}
 #ifdef EXT_DEBUG
@@ -873,6 +882,7 @@ bool SwitchHandler::alarmHandler(uint8_t busNr)
 		j++;
 #ifdef DEBUG
 		if (debug > 0) {
+			log_time();
 			Serial.print(busNr);
 			Serial.print(F("@"));
 			for (uint8_t i = 0; i < 8; i++) {
@@ -911,7 +921,7 @@ bool SwitchHandler::alarmHandler(uint8_t busNr)
 				if (hum != 0xff)
 					host.addEvent (HUMIDITY_CHANGE, busNr, adr[1], hum);
 #ifdef DEBUG
-				if (debug) {
+				if (debug > 1) {
 					Serial.print(busNr);
 					Serial.print(F("."));
 					Serial.print(adr[1]);

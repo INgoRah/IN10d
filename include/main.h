@@ -10,8 +10,10 @@
 #include <avr/wdt.h>
 #include "version.h"
 
-#define MAX_BUS 3
-#define MAX_ADR 15
+#define MAX_BUS 4
+#define MAX_ADR 13
+
+extern void log_time();
 
 extern byte debug;
 extern uint8_t min;

@@ -48,9 +48,11 @@ void OwDevices::begin(OneWireBase *ds)
 	ow = ds;
 	ow->resetDev();
 	ow->configureDev(DS2482_CONFIG_APU);
-	for (int i = 0; i < MAX_BUS; i++)
+	for (int i = 0; i < MAX_BUS; i++) {
+		// search devs
 		for (int j = 0; j < MAX_ADR; j++)
 			pio_data[i][j] = 0xff;
+	}
 }
 
 void OwDevices::adrGen(uint8_t bus, uint8_t adr[8], uint8_t id)
@@ -152,6 +154,10 @@ uint8_t OwDevices::ds2408RegRead(byte bus, uint8_t* addr, uint8_t* data, bool la
 /* Send channel data - currently not used */
 uint8_t OwDevices::ds2408ChWrite(byte bus, uint8_t* addr, uint8_t* data, int cnt)
 {
+	(void)bus;
+	(void)addr;
+	(void)data;
+	(void)cnt;
 #if 0
 	uint8_t r;
 	int i;

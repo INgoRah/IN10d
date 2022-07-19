@@ -50,6 +50,8 @@ void TwiHost::begin(uint8_t slaveAdr)
 	Wire.begin(slaveAdr);
 	Wire.onReceive(receiveEvent);
 	Wire.onRequest(requestEvent);
+	// not changed, so no need to call this all the time
+	setData((uint8_t*)hostData, 9);
 }
 
 void TwiHost::onCommand( void (*function)(uint8_t, uint8_t) )
@@ -94,42 +96,47 @@ uint8_t TwiHost::getStatus()
 	return status;
 };
 
+void TwiHost::commandData()
+{
+	struct logData d;
+	union s_adr src;
+
+	// check for last ack...if not done, do not pop
+	if (_ack != _seq) {
+		if (debug > 2) {
+			log_time();
+			Serial.print (F("repeating "));
+			Serial.print (_seq, HEX);
+			Serial.print (F(" last="));
+			Serial.println (_ack, HEX);
+		}
+		setStatus(STAT_OK);
+		return;
+	}
+	_seq++;
+	if (_seq == 0x80)
+		_seq = 1;
+	d = events.pop();
+	src.data = d.source;
+	hostData[0] = d.type;
+	hostData[1] = src.sa.bus;
+	hostData[2] = src.sa.adr;
+	hostData[3] = src.sa.latch;
+	hostData[4] = src.sa.press;
+	hostData[5] = (d.data & 0xff00) >> 8;
+	hostData[6] = d.data & 0xff;
+	hostData[7] = _seq;
+	hostData[8] = 0xAA; // should be crc
+	setStatus(STAT_OK);
+}
+
 void TwiHost::command()
 {
 	switch (cmd)
 	{
 	case CMD_EVT_DATA:
 		if (events.size() > 0) {
-			struct logData d;
-			union s_adr src;
-
-			// check for last ack...if not done, do not pop
-			if (_ack != _seq) {
-				if (debug > 2) {
-					Serial.print (F("repeating "));
-					Serial.print (_seq, HEX);
-					Serial.print (F(" last="));
-					Serial.println (_ack, HEX);
-				}
-				setData((uint8_t*)hostData, 9);
-				setStatus(STAT_OK);
-				return;
-			}
-			_seq++;
-			if (_seq == 0x80)
-				_seq = 1;
-			d = events.pop();
-			src.data = d.source;
-			hostData[0] = d.type;
-			hostData[1] = src.sa.bus;
-			hostData[2] = src.sa.adr;
-			hostData[3] = src.sa.latch;
-			hostData[4] = src.sa.press;
-			hostData[5] = (d.data & 0xff00) >> 8;
-			hostData[6] = d.data & 0xff;
-			hostData[7] = _seq;
-			hostData[8] = 0xAA; // should be crc
-			setStatus(STAT_OK);
+			commandData();
 		} else
 			setStatus(STAT_NO_DATA);
 		break;
@@ -195,6 +202,7 @@ void TwiHost::command()
 				dst.da.type = 0;
 #ifdef EXT_DEBUG
 			if (debug > 1) {
+				log_time();
 				Serial.print(dst.da.bus);
 				Serial.print(F("."));
 				Serial.print(dst.da.adr);
@@ -322,8 +330,14 @@ void TwiHost::addEvent(uint8_t type, uint16_t source, uint16_t data)
 	d.h = hour;
 	d.min = min;
 	d.sec = sec;
+	/* todo: if nothing in fifo, put it to the host data
+	   and prepare for data get
+	*/
 	events.push(d);
-	digitalWrite (HOST_ALRM_PIN, LOW);
+	// let this be handled in the main loop
+	// alarm pin will be raised if events contains
+	// data
+	//digitalWrite (HOST_ALRM_PIN, LOW);
 };
 
 void TwiHost::addEvent(uint8_t type, uint8_t bus, uint8_t adr, uint16_t data)
@@ -367,13 +381,15 @@ void TwiHost::handleAck(uint8_t ack)
 	if (ack == _seq) {
 		// serviced
 		_ack = ack;
-		if (debug > 2) {
+		if (debug > 3) {
+			log_time();
 			Serial.print (F("ACKed "));
 			Serial.println(ack, HEX);
 		}
 		host.setStatus(STAT_OK);
 	} else {
 		host.setStatus(STAT_WRONG);
+		log_time();
 		Serial.print (F("ACK mismatch "));
 		Serial.print (ack, HEX);
 		Serial.print (F(" != "));
@@ -386,6 +402,10 @@ void TwiHost::handleAck(uint8_t ack)
 void TwiHost::receiveEvent(int howMany) {
 	byte d;
 
+	if (howMany < 1) {
+		Serial.print (F("rxEvent underflow"));
+		return;
+	}
 	d = Wire.read();
 	if (cmd != 0xff &&
 		(d == CMD_SWITCH || d == CMD_EVT_DATA)) {
@@ -417,7 +437,12 @@ void TwiHost::receiveEvent(int howMany) {
 		break;
 #endif
 	case CMD_SET_READ_PTR:
-		reg = Wire.read();
+		if (howMany < 2) {
+			Serial.println (F("READ PTX underflow"));
+			reg = DS2482_ALARM_STATUS_REGISTER;
+		}
+		else
+			reg = Wire.read();
 		break;
 	case CMD_DATA:
 		// host will request data, so just set the register
@@ -437,7 +462,10 @@ void TwiHost::receiveEvent(int howMany) {
 		swHdl.dim_on_lvl = Wire.read();
 		break;
 	case CMD_ACK:
-		host.handleAck(Wire.read());
+		if (howMany < 2) {
+			Serial.println (F("ACK underflow"));
+		} else
+			host.handleAck(Wire.read());
 		break;
 	case CMD_EVT_DATA: // get event data
 		if (host.events.size() > 0) {
@@ -448,9 +476,15 @@ void TwiHost::receiveEvent(int howMany) {
 			host.setStatus(STAT_NO_DATA);
 		break;
 	case CMD_TIME:
-		hour = Wire.read();
-		min = Wire.read();
-		sun = Wire.read();
+		if (howMany > 1)
+			hour = Wire.read();
+		if (howMany > 2)
+			min = Wire.read();
+		if (howMany > 3)
+			sun = Wire.read();
+		else
+			Serial.println (F("Time underflow"));
+
 		host.setStatus(STAT_OK);
 		break;
 	case CMD_SWITCH:
@@ -524,6 +558,7 @@ void TwiHost::requestEvent() {
 			host.setStatus(STAT_NO_DATA);
 			Wire.write(0xff);
 		}
+		reg = DS2482_STATUS_REGISTER;
 		break;
 	case DS2482_ALARM_STATUS_REGISTER:
 		{
