@@ -96,6 +96,20 @@ unsigned long ledOnTime = 0;
 #endif
 int i2cRead();
 
+void log_time()
+{
+		Serial.print(hour);
+		Serial.print(F(":"));
+		if (min < 10)
+			Serial.print(F("0"));
+		Serial.print(min);
+		Serial.print(F(":"));
+		if (sec < 10)
+			Serial.print(F("0"));
+		Serial.print(sec);
+		Serial.print(F(" "));
+}
+
 /*
 * Function definitions
 */
