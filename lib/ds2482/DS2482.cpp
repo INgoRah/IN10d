@@ -42,12 +42,22 @@ DS2482::DS2482(uint8_t addr)
 //-------helpers
 void DS2482::begin()
 {
+	status = stOk;
+	// timeout 5 ms
+	Wire.setWireTimeout(5000, false);
 	Wire.beginTransmission(mAddress);
 }
 
 void DS2482::end()
 {
-	Wire.endTransmission();
+	uint8_t ret;
+
+	ret = Wire.endTransmission();
+	if (ret) {
+		Serial.print("I2C tx err=");
+		Serial.println(ret);
+		status = stTimeout;
+	}
 }
 
 void DS2482::setReadPtr(uint8_t readPtr)
@@ -60,7 +70,15 @@ void DS2482::setReadPtr(uint8_t readPtr)
 
 uint8_t DS2482::_read()
 {
-	Wire.requestFrom(mAddress,(uint8_t)1);
+	uint8_t ret;
+
+	/* this can result in a timeout (ret == 0) */
+	ret = Wire.requestFrom(mAddress,(uint8_t)1);
+	if (ret == 0) {
+		status = stTimeout;
+		return 0xff;
+	}
+
 	return Wire.read();
 }
 
@@ -77,13 +95,22 @@ uint8_t DS2482::busyWait(bool setPtr)
 	uint8_t res;
 	int loopCount = 500;
 
-	if (setPtr)
+	if (setPtr) {
 		setReadPtr(PTR_STATUS);
+		if (status == stTimeout) {
+			Serial.println("ReadPtr TO");
+			return DS2482_STATUS_INVAL;
+		}
+	} else
+		/* in the other case this is done in the begin */
+		status = stOk;
+
 	while((res = _read()) & DS2482_STATUS_BUSY)
 	{
 		if (--loopCount == 0) {
+			Serial.println("BusyWait TO");
 			status = stTimeout;
-			break;
+			return DS2482_STATUS_INVAL;
 		}
 		delayMicroseconds(20);
 	}
@@ -93,7 +120,6 @@ uint8_t DS2482::busyWait(bool setPtr)
 //----------interface
 void DS2482::resetDev()
 {
-	status = stOk;
 	begin();
 	Wire.write(0xf0);
 	end();
@@ -121,7 +147,12 @@ bool DS2482::selectChannel(uint8_t channel)
 	Wire.write(0xc3);
 	Wire.write(chan_w[channel]);
 	end();
-	busyWait();
+	if (status == stTimeout) {
+		Serial.println("selCh TO");
+		return false;
+	}
+	/* after channel selection the read pointer points
+	to the channel register */
 
 	uint8_t check = _read();
 
@@ -134,6 +165,10 @@ bool DS2482::reset()
 	begin();
 	Wire.write(0xb4);
 	end();
+	if (status == stTimeout) {
+		Serial.println("reset (2) TO");
+		return false;
+	}
 
 	uint8_t stat = busyWait();
 

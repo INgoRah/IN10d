@@ -38,6 +38,7 @@
 #define DS2484_CONFIG_WS  (1<<3)
 
 #define DS2482_STATUS_BUSY 	(1<<0)
+/* presence bit */
 #define DS2482_STATUS_PPD 	(1<<1)
 #define DS2482_STATUS_SD	(1<<2)
 #define DS2482_STATUS_LL	(1<<3)
@@ -45,6 +46,7 @@
 #define DS2482_STATUS_SBR	(1<<5)
 #define DS2482_STATUS_TSB	(1<<6)
 #define DS2482_STATUS_DIR	(1<<7)
+#define DS2482_STATUS_INVAL	0xfd
 
 class DS2482 : public OneWireBase
 {

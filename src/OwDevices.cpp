@@ -83,19 +83,27 @@ uint8_t OwDevices::ds2408LatchReset(uint8_t* addr)
 {
 	uint8_t retry;
 	uint8_t tmp;
+	bool res;
 
 #if defined(AVRSIM)
 	return 0xAA;
 #endif
 	retry = 5;
 	do {
-		ow->reset();
-		ow->select(addr);
-		ow->write (0xC3);
-		tmp = ow->read();
-		if (tmp == 0xAA)
-			break;
+		res = ow->reset();
+		if (res) {
+			ow->select(addr);
+			ow->write (0xC3);
+			tmp = ow->read();
+			if (tmp == 0xAA)
+				break;
+		} else {
+			delayMicroseconds(100);
+		}
 	} while (retry-- > 0);
+	if (retry == 0) {
+		Serial.println ("latch reset timeout!");
+	}
 
 	return tmp;
 }
@@ -112,6 +120,7 @@ uint8_t OwDevices::ds2408LatchReset(uint8_t* addr)
  * */
 uint8_t OwDevices::ds2408RegRead(byte bus, uint8_t* addr, uint8_t* data, bool latch_reset)
 {
+	bool ret;
 	uint8_t tmp;
 	uint8_t buf[3];  // Put everything in the buffer so we can compute CRC easily.
 
@@ -122,8 +131,12 @@ uint8_t OwDevices::ds2408RegRead(byte bus, uint8_t* addr, uint8_t* data, bool la
 	uint8_t retry = REG_RETRY;
 	do {
 		/* read latch */
-		ow->selectChannel(bus);
-		ow->reset();
+		ret = ow->selectChannel(bus);
+		if (!ret)
+			return 0xff;
+		ret = ow->reset();
+		if (!ret)
+			return 0xff;
 		ow->select(addr);
 		// read data registers
 		buf[0] = 0xF0;    // Read PIO Registers
@@ -257,8 +270,11 @@ uint8_t OwDevices::ds2408PioSet(byte bus, uint8_t* addr, uint8_t pio)
 	return 0xAA;
 #else
 	uint8_t r, retry;
+	bool ret;
 
-	ow->selectChannel(bus);
+	ret = ow->selectChannel(bus);
+	if (!ret)
+		return 0xff;
 	retry = 5;
 	do {
 		wdt_reset();
@@ -326,8 +342,11 @@ void OwDevices::ds2408CfgWrite(byte bus, byte adr[8], uint8_t* d, uint8_t len)
 int16_t OwDevices::tempRead(byte busNr, byte addr[8], byte mode, uint8_t* hum)
 {
 	uint8_t scratchPad[9];
+	bool ret;
 
-	ow->selectChannel(busNr);
+	ret = ow->selectChannel(busNr);
+	if (!ret)
+		return -1;
 	ow->reset();
 	ow->select(addr);
 	switch (mode) {
