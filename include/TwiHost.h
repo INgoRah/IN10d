@@ -38,7 +38,9 @@ enum {
 	TEMP_CHANGE,
 	BRIGHTNESS_CHANGE,
 	DIMMING_DOWN,
-	HUMIDITY_CHANGE
+	HUMIDITY_CHANGE,
+	POWER_IMP,
+	SYS_START
 };
 
 struct logData {
@@ -64,6 +66,7 @@ class TwiHost
 		uint8_t alarmSignal;
 		static void (*user_onCommand)(uint8_t cmd, uint8_t data);
 		void command();
+		void commandData();
 
 		static void receiveEvent(int howMany);
 		static void requestEvent();

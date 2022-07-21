@@ -8,3 +8,4 @@ Notes.md
 *.code-workspace
 *.orig
 post_extra_script.py
+bak/*

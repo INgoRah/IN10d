@@ -162,6 +162,8 @@ void setup() {
 	cli.begin(&ow);
 #endif
 	wdt_enable(WDTO_2S);
+}
+
 /* interupt on PORTB:
  PB0 (= D8): Power Interval (500/1 KWh = 2 Wh) */
 ISR (PCINT0_vect)
@@ -284,7 +286,8 @@ void loop()
 #endif
 		if (pinSignal & 0x8) {
 			log_time();
-			Serial.println(F("Count"));
+			if (debug > 3)
+				Serial.println(F("Count"));
 			pow_imp++;
 			host.addEvent (POWER_IMP, 0, 9, pow_imp);
 		}
