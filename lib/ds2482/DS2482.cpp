@@ -44,7 +44,7 @@ void DS2482::begin()
 {
 	status = stOk;
 	// timeout 5 ms
-	Wire.setWireTimeout(5000, false);
+	Wire.setWireTimeout(5000, true);
 	Wire.beginTransmission(mAddress);
 }
 

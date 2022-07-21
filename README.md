@@ -31,6 +31,8 @@ env.AddPostAction(
     ]), "Copying $BUILD_DIR/${PROGNAME}.hex")
 )
 
+Build using PlatformIO: %USERPROFILE%\.platformio\penv\Scripts\platformio.exe run --environment nanoatmega328-deploy
+
 Debugging with "simulation" target
 
 ## Main Tasks

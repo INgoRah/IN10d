@@ -246,7 +246,8 @@ void CmdCli::funcPio(CmdParser *myParser)
 	union pio dst;
 
 	if (myParser->getParamCount() != 4 && myParser->getParamCount() != 1) {
-		Serial.println(F("(bus adr pio) level !"));
+		Serial.print(myParser->getParamCount());
+		Serial.println(F(", need (bus adr pio) level !"));
 		return;
 	}
 	if (myParser->getParamCount() == 4) {
