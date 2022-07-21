@@ -7,6 +7,7 @@
 #define stOk 0
 #define stTimeout 1
 #define stNoDevs 2
+#define stBusy 3
 
 #define OW_MATCH_ROM    0x55
 #define OW_SKIP_ROM     0xCC

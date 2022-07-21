@@ -872,12 +872,16 @@ bool SwitchHandler::alarmHandler(uint8_t busNr)
 	uint8_t adr[8];
 	uint8_t j = 0;
 	uint8_t cnt = 10;
+	bool ret;
 
 	//ds = bus[busNr];
-	ds->selectChannel(busNr);
-	ds->reset();
+	ret = ds->selectChannel(busNr);
+	if (!ret)
+		return false;
+	ret = ds->reset();
+	if (!ret)
+		return false;
 	ds->reset_search();
-
 	while (ds->search(adr, false)) {
 		j++;
 #ifdef DEBUG
@@ -916,7 +920,8 @@ bool SwitchHandler::alarmHandler(uint8_t busNr)
 		if (adr[0] == 0x28) {
 				uint8_t hum;
 				uint16_t c = _devs->tempRead(busNr, adr, 1, &hum);
-
+				if (c == 0xffff)
+					return false;
 				host.addEvent (TEMP_CHANGE, busNr, adr[1], c);
 				if (hum != 0xff)
 					host.addEvent (HUMIDITY_CHANGE, busNr, adr[1], hum);

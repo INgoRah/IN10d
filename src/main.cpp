@@ -162,7 +162,49 @@ void setup() {
 	cli.begin(&ow);
 #endif
 	wdt_enable(WDTO_2S);
+	//WDTCSR |= _BV(WDIE);
+
+	//ApplicationMonitor.Dump(Serial);
+	//ApplicationMonitor.EnableWatchdog(Watchdog::CApplicationMonitor::Timeout_2s);
+
+	host.addEvent (SYS_START, 0, 9, 0);
+	// todo: update cache
 }
+
+#if 0
+ISR(WDT_vect, ISR_NAKED)
+{
+	uint8_t *upStack;
+	uint16_t uAddress = 0;
+
+	// Setup a pointer to the program counter. It goes in a register so we
+	// don't mess up the stack.
+	upStack = (uint8_t*)SP;
+	// The stack pointer on the AVR micro points to the next available location
+	// so we want to go back one location to get the first byte of the address
+	// pushed onto the stack when the interrupt was triggered. There will be
+	// PROGRAM_COUNTER_SIZE bytes there.
+	++upStack;
+	memcpy(&uAddress, upStack, 2);
+	Serial.print("SP=0x");
+	Serial.println(2 * uAddress, HEX);
+
+	Serial.print("SP-1=0x");
+	--upStack;
+	memcpy(&uAddress, upStack, 2);
+	Serial.println(2 * uAddress, HEX);
+
+	Serial.print("SP-2=0x");
+	--upStack;
+	memcpy(&uAddress, upStack, 2);
+	Serial.println(2 * uAddress, HEX);
+
+	Serial.flush();
+	wdt_enable(WDTO_120MS);
+	while (true)
+		;
+}
+#endif
 
 /* interupt on PORTB:
  PB0 (= D8): Power Interval (500/1 KWh = 2 Wh) */
@@ -286,8 +328,7 @@ void loop()
 #endif
 		if (pinSignal & 0x8) {
 			log_time();
-			if (debug > 3)
-				Serial.println(F("Count"));
+			Serial.println(F("Count"));
 			pow_imp++;
 			host.addEvent (POWER_IMP, 0, 9, pow_imp);
 		}
