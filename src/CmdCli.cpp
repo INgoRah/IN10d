@@ -888,8 +888,12 @@ void serialEvent() {
 		// if the incoming character is a newline, set a flag so the
 		// main loop can do something about it:
 		if (inChar == 0x0d) {
-			stringComplete = true;
 			Serial.println();
+			if (inputString.length() == 0) {
+				Serial.println(F("\now:# "));
+				return;
+			}
+			stringComplete = true;
 			return;
 		}
 		if (inChar == 0x08 ||

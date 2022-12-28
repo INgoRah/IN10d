@@ -184,31 +184,31 @@ bool SwitchHandler::timerUpdate(union d_adr_8 dst, uint8_t typ)
 			break;
 		default:
 		case 1:
-			secs = 30;
+			secs = 20;
 			break;
 		case 2:
-			secs = 1 MIN;
+			secs = 30;
 			break;
 		case 3:
-			secs = 2 MIN;
+			secs = 1 MIN;
 			break;
 		case 4:
-			secs = 5 MIN;
+			secs = 2 MIN;
 			break;
 		case 5:
-			secs = 10 MIN;
+			secs = 5 MIN;
 			break;
 		case 6:
-			secs = 15 MIN;
+			secs = 10 MIN;
 			break;
 		case 7:
-			secs = 30 MIN;
+			secs = 15 MIN;
 			break;
 		case 8:
-			secs = 1 HOUR;
+			secs = 30 MIN;
 			break;
 		case 9:
-			secs = 1;
+			secs = 1 HOUR;
 			break;
 	}
 	for (i = 0; i < MAX_TIMER; i++) {
@@ -822,6 +822,9 @@ bool SwitchHandler::switchHandle(uint8_t busNr, uint8_t adr1)
 					struct _timer_item* tmr = timerItem(p->dst.data);
 					if (tmr != NULL)
 						tmr->ms = millis();
+					else
+						// switch off
+						actorHandle(p->dst, OFF);
 				}
 			}
 		}
@@ -877,6 +880,8 @@ bool SwitchHandler::alarmHandler(uint8_t busNr)
 	//ds = bus[busNr];
 	ret = ds->selectChannel(busNr);
 	if (!ret)
+		// this could be a timeout or other issue
+		// must be repeated
 		return false;
 	ret = ds->reset();
 	if (!ret)

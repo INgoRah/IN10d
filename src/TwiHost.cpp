@@ -176,7 +176,7 @@ void TwiHost::command()
 
 			setStatus(STAT_PROCESSING);
 			dst.data = 0;
-			if (rxBytes < 4) {
+			if (rxBytes < 4 && debug > 0) {
 #ifdef EXT_DEBUG
 				Serial.print("rx cnt=");
 				Serial.println(rxBytes);
@@ -300,13 +300,16 @@ void TwiHost::loop()
 	}
 	if (rxBytes > 0) {
 		/* should never happen */
-		Serial.print (F("Data not handled: "));
-		Serial.print (Wire.available());
+		if (debug > 0) {
+			Serial.print (F("Data not handled: "));
+			Serial.print (Wire.available());
+		}
 		if (Wire.available()) {
 			uint8_t d = Wire.read();
-
-			Serial.print (F(" Bytes, Data="));
-			Serial.println (d, HEX);
+			if (debug > 0) {
+				Serial.print (F(" Bytes, Data="));
+				Serial.println (d, HEX);
+			}
 		}
 		rxBytes = 0;
 	}
@@ -389,11 +392,13 @@ void TwiHost::handleAck(uint8_t ack)
 		host.setStatus(STAT_OK);
 	} else {
 		host.setStatus(STAT_WRONG);
-		log_time();
-		Serial.print (F("ACK mismatch "));
-		Serial.print (ack, HEX);
-		Serial.print (F(" != "));
-		Serial.println (_seq, HEX);
+		if (debug > 0) {
+			log_time();
+			Serial.print (F("ACK mismatch "));
+			Serial.print (ack, HEX);
+			Serial.print (F(" != "));
+			Serial.println (_seq, HEX);
+		}
 	}
 }
 
@@ -409,16 +414,23 @@ void TwiHost::receiveEvent(int howMany) {
 	d = Wire.read();
 	if (cmd != 0xff &&
 		(d == CMD_SWITCH || d == CMD_EVT_DATA)) {
-		Serial.print (F(" cmd "));
-		Serial.print (cmd);
-		Serial.print (F(" not yet handled, Stat  "));
-		Serial.print (host.status, HEX);
-		Serial.print (F(" new "));
-		Serial.println (d, HEX);
-		Serial.print (F("last ACK "));
-		Serial.print (host._ack, HEX);
-		Serial.print (F(" != "));
-		Serial.println (host._seq, HEX);
+		/* TODO: Handle queue
+		5:27:37 1.1.2 level=100
+ 		cmd 3 not yet handled, Stat  2 new 3
+		last ACK 4A != 4A
+		*/
+		if (debug > 0) {
+			Serial.print (F(" cmd "));
+			Serial.print (cmd);
+			Serial.print (F(" not yet handled, Stat  "));
+			Serial.print (host.status, HEX);
+			Serial.print (F(" new "));
+			Serial.println (d, HEX);
+			Serial.print (F("last ACK "));
+			Serial.print (host._ack, HEX);
+			Serial.print (F(" != "));
+			Serial.println (host._seq, HEX);
+		}
 	}
 	/* assert if not at least 1? */
 	switch (d)

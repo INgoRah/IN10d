@@ -75,16 +75,18 @@ struct _sw_tbl {
 enum tim_type {
 	/** Timer always, hard off per time */
 	TYPE_DEF,
-	TYPE_30S		/* 1 */,
-	TYPE_1MIN		/* 2 */,
-	TYPE_2MIN		/* 3 */,
-	TYPE_5MIN		/* 4 */,
-	TYPE_10MIN		/* 5 */,
-	TYPE_15MIN		/* 6 */,
-	TYPE_30MIN		/* 7 */,
-	TYPE_1H 		/* 8 */,
+	TYPE_20S		/* 1 */,
+	TYPE_30S		/* 2 */,
+	TYPE_1MIN		/* 3 */,
+	TYPE_2MIN		/* 4 */,
+	TYPE_5MIN		/* 5 */,
+	TYPE_10MIN		/* 6 */,
+	TYPE_15MIN		/* 7 */,
+	TYPE_30MIN		/* 8 */,
+	TYPE_1H 		/* 9 */,
 	/** Timer on darkness with hard off per time */
 	TYPE_DARK = 10,
+	TYPE_DARK_20S	/* 11 */,
 	TYPE_DARK_30S	/* 11 */,
 	TYPE_DARK_1MIN	/* 12 */,
 	TYPE_DARK_2MIN	/* 13 */,
@@ -96,6 +98,7 @@ enum tim_type {
 	/** Timer on darkness with soft off per time
 	 *  if supported (dimmable), time 5 secs */
 	TYPE_DARK_SOFT = 20,
+	TYPE_DARK_SOFT_20S		/* 21 */,
 	TYPE_DARK_SOFT_30S		/* 21 */,
 	TYPE_DARK_SOFT_1MIN		/* 22 */,
 	TYPE_DARK_SOFT_2MIN		/* 23 */,

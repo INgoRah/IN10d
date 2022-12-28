@@ -110,3 +110,22 @@ If event data (0x40)
     read data (on event 9 bytes): type, bus, adr, latch, press, 16 bit data, seq, 0xaa
     seq: 1..0x7f
     read status again and repeat if needed
+
+## Switch configuration
+
+sw : dumps the table
+sw r : reads the table from eeprom again
+sw s : saves the table into eeprom
+sw c : clears the table
+sw d <bus> <adr> <latch>: deletes a switch
+sw s <bus> <adr> <latch> <dst bus> <dst adr> <dst pio> [type]
+	add a switch
+sw t <timer type> <bus> <adr> <latch> <dst bus> <dst adr> <dst pio> [type]
+	Add a timed switch
+    Timed table	timer type: 1 = 20 sec, 2: 30 sec, 3: 1 min, 4: 2 min, 5: 5 mins ...
+    Timer on darkness: offset 10
+	Timer on darkness with soft off per time if supported (dimmable), time 5 secs: offset 20
+
+    latch 10 .. 17: long press
+    latch 0 .. 7: normal press
+    latch 20 .. 27: pressing

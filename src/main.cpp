@@ -327,12 +327,13 @@ void loop()
 			swHdl.switchHandle(0, 9, 0x8);
 #endif
 		if (pinSignal & 0x8) {
-			log_time();
-			Serial.println(F("Count"));
+			if (debug > 3) {
+				log_time();
+				Serial.println(F("Count"));
+			}
 			pow_imp++;
 			host.addEvent (POWER_IMP, 0, 9, pow_imp);
 		}
-
 		pinSignal = 0;
 	}
 	/* if there is any host data transfer, avoid conflicts on the I2C bus
@@ -343,7 +344,10 @@ void loop()
 	swHdl.loop();
 	if (alarmSignal) {
 		alarmPolling = millis();
-		host.setAlarm();
+		//host.setAlarm();
+		/* the alarmhandler will set the alarm signal to the host
+		   after the event data is prepared. Otherwise a host could
+		   disturb our switching process */
 		if (swHdl.mode & MODE_ALRAM_HANDLING) {
 			byte retry;
 			for (byte i = 0; i < MAX_BUS; i++) {
@@ -352,11 +356,13 @@ void loop()
 					while (!swHdl.alarmHandler(i)) {
 						if (retry-- == 0)
 							break;
+						delay (1);
 					}
 					wdt[i]->alarm = false;
 				}
 			}
-		}
+		} else
+			host.setAlarm();
 		alarmSignal--;
 		// ds->reset();
 	}
