@@ -12,10 +12,6 @@
 #define CLI_NR CLI_NR_BASE
 #endif
 
-extern void printDst8(union d_adr_8 dst);
-extern void printDst(union pio dst);
-extern void printSrc(union s_adr src);
-
 class CmdCli
 {
 	private:

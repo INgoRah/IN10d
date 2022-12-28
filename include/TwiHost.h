@@ -60,7 +60,7 @@ struct logData {
 class TwiHost
 {
 	private:
-		uint8_t hostData[12];
+		uint8_t hostData[9];
 		byte rxBytes;
 		byte _seq, _ack;
 		uint8_t alarmSignal;
@@ -79,7 +79,6 @@ class TwiHost
 		void setStatus(uint8_t stat);
 		uint8_t getStatus();
 		void setAlarm(uint8_t alarm = 1);
-		static void setData(uint8_t *data, uint8_t len);
 		void addEvent(uint8_t type, uint16_t source, uint16_t data = 0);
 		void addEvent(uint8_t type, uint8_t bus, uint8_t adr, uint16_t data);
 		void addEvent(union pio dst, uint16_t data = 0, uint8_t type = DST_CHANGE);

@@ -68,42 +68,51 @@ void OwDevices::adrGen(uint8_t bus, uint8_t adr[8], uint8_t id)
 	adr[5] = 0x66;
 	adr[6] = 0x77;
 	adr[7] = ow->crc8 (adr, 7);
-#if 0
-	int i;
-	for (i = 0; i < 7; i++) {
-		Serial.print(adr[i], HEX);
-		Serial.print(F(' '));
-	}
-	Serial.println(adr[i], HEX);
-#endif
 }
 
 /* requires bus selected already before */
 uint8_t OwDevices::ds2408LatchReset(uint8_t* addr)
 {
-	uint8_t retry;
-	uint8_t tmp;
+	uint8_t retry, tmp, err = 0;
 	bool res;
 
 #if defined(AVRSIM)
 	return 0xAA;
 #endif
-	retry = 5;
+	retry = LATCH_RESET_RETRY - 1;
 	do {
+		tmp = 0xff;
 		res = ow->reset();
-		if (res) {
+		if (res && ow->last_err == 0)
 			ow->select(addr);
+		if (ow->last_err == 0)
 			ow->write (0xC3);
+		if (ow->last_err == 0)
 			tmp = ow->read();
-			if (tmp == 0xAA)
-				break;
-		} else {
-			delayMicroseconds(100);
+		if (tmp == 0xAA)
+			break;
+		if (ow->last_err != 0) {
+			err = ow->last_err;
 		}
-	} while (retry-- > 0);
-	if (retry == 0) {
-		Serial.println ("latch reset timeout!");
+		if (err == 0)
+			err = ow->last_err;
+		delay(LATCH_RESET_RETRY - retry);
+	} while (--retry > 0);
+#ifdef DEBUG
+	if ((err && retry == 0) || (err && debug > 0)) {
+		log_time();
+		Serial.print (F("latch reset err="));
+		Serial.print (err);
+		if (retry == 0)
+			Serial.println(F(" ERR! "));
+		else {
+			Serial.print(F(" retry="));
+			Serial.println(retry);
+		}
 	}
+#endif
+	if (retry == 0)
+		return 0xff;
 
 	return tmp;
 }
@@ -117,49 +126,73 @@ uint8_t OwDevices::ds2408LatchReset(uint8_t* addr)
  * [5] Status
  * [6] Status ext 1, used for press time detection
  * [7] Status ext 2
+ *
+ * Returns 0xaa in case of successful read and latch reset
+ * Returns 0xff in case of latch reset issue
+ * Returns 0 in case of bus error or timeout -> to be repeated
  * */
 uint8_t OwDevices::ds2408RegRead(byte bus, uint8_t* addr, uint8_t* data, bool latch_reset)
 {
 	bool ret;
-	uint8_t tmp;
+	uint8_t tmp, err = 0;
 	uint8_t buf[3];  // Put everything in the buffer so we can compute CRC easily.
 
 #if defined(AVRSIM)
 	data[1] = 0x55;
 	return 0xAA;
 #endif
-	uint8_t retry = REG_RETRY;
+	uint8_t retry = REG_RETRY - 1;
+
+	// read data registers
+	buf[0] = 0xF0;    // Read PIO Registers
+	buf[1] = 0x88;    // LSB address
+	buf[2] = 0x00;    // MSB address
 	do {
+		//wdt_reset(); ??
 		/* read latch */
 		ret = ow->selectChannel(bus);
-		if (!ret)
-			return 0xff;
-		ret = ow->reset();
-		if (!ret)
-			return 0xff;
-		ow->select(addr);
-		// read data registers
-		buf[0] = 0xF0;    // Read PIO Registers
-		buf[1] = 0x88;    // LSB address
-		buf[2] = 0x00;    // MSB address
-		ow->write (buf, 3);
+		if (ow->last_err == 0)
+			ret = ow->reset();
+		if (ret && ow->last_err == 0)
+			ow->select(addr);
+		if (ow->last_err == 0)
+			ow->write (buf, 3);
 		// 3 cmd bytes, 6 data bytes, 2 0xFF, 2 CRC16
 		// 1:
-		ow->read (data, 10);
+		// try this: alway read not running into a watchdog
+		// on the slave
+		// if (ow->last_err == 0)
+			ow->read (data, 10);
 		/* check for valid status register */
 		if (data[5] != 0xff)
 			break;
-	} while (retry-- > 0);
-	if (data[5] == 0xff)
-		return 0xff;
+		if (err == 0)
+			err = ow->last_err;
+		// if we got here, there is an issue and we
+		// will try again
+		delay(5);
+	} while (--retry > 0);
+	if (err) {
+#ifdef DEBUG
+		if (debug > 0  || retry == 0) {
+			log_time();
+			Serial.print(F("RegRead err="));
+			Serial.print(err);
+			if (retry == 0)
+				Serial.println(F("ERR! "));
+			else {
+				Serial.print(F(" retry="));
+				Serial.println(retry);
+			}
+		}
+#endif
+		if ((retry == 0 || data[5] == 0xff) && !latch_reset)
+			return 0xff;
+	}
 	// TODO update cache here?
 	pio_data[bus][addr[1] & 0x0f] = data[1];
-	if (!latch_reset)
-		return 0xaa;
+	// clear the alarm status
 	tmp = ds2408LatchReset(addr);
-
-	if (tmp != 0xAA)
-		Serial.println(F("latch reset error"));
 
 	return tmp;
 }
@@ -193,6 +226,7 @@ uint8_t OwDevices::ds2408ChWrite(byte bus, uint8_t* addr, uint8_t* data, int cnt
 
 void OwDevices::toggleDs2413(byte bus, uint8_t* addr)
 {
+#if 0
 	unsigned char pio, pion;
 	int cnt = 10;
 
@@ -221,45 +255,9 @@ void OwDevices::toggleDs2413(byte bus, uint8_t* addr)
 		if (cnt-- == 0)
 			return;
 	} while (pio != 0xAA);
-}
-
-/* reads and returns the Output latch state register
-
-TODO make sure, that the data is correct ... how? */
-uint8_t OwDevices::ds2408PioGet(byte bus, uint8_t* addr)
-{
-	uint8_t res, d[10];
-
-	if (pio_data[bus][addr[1] & 0x0f] != 0)
-		return 	pio_data[bus][addr[1] & 0x0f];
-
-#if defined(AVRSIM)
-	return pio_data[bus][addr[1] & 0x0f];
-#endif
-
-	res = ds2408RegRead(bus, addr, d, false);
-	if (res != 0xaa) {
-		Serial.print("Read error: ");
-		Serial.println(res, HEX);
-	} else
-		pio_data[bus][addr[1] & 0x0f] = d[1];
-
-	return d[1];
-#if 0
-	uint8_t buf[3];
-	uint8_t pio;
-
-	ow->selectChannel(bus);
-	ow->reset();
-	ow->select(addr);
-	// read data registers
-	buf[0] = 0xF0;    // Read PIO Registers
-	buf[1] = 0x89;    // LSB address
-	buf[2] = 0x00;    // MSB address
-	ow->write (buf, 3);
-	pio = ow->read();
-
-	return pio;
+#else
+	(void)bus;
+	(void)addr;
 #endif
 }
 
@@ -269,38 +267,86 @@ uint8_t OwDevices::ds2408PioSet(byte bus, uint8_t* addr, uint8_t pio)
 	pio_data[bus][addr[1] & 0x0f] = pio;
 	return 0xAA;
 #else
-	uint8_t r, retry;
+	uint8_t r, retry, err = 0;
 	bool ret;
 
-	ret = ow->selectChannel(bus);
-	if (!ret)
-		return 0xff;
-	retry = 5;
+	retry = PIOSET_RETRY - 1;
 	do {
+		r = 0xff;
 		wdt_reset();
-		ow->reset();
-		ow->select(addr);
-		ow->write (0x5A);
-		ow->write (pio);
-		ow->write (0xFF & ~(pio));
-		r = ow->read();
-
+		ret = ow->selectChannel(bus);
+		if (ret)
+			ret = ow->reset();
+		if (ret)
+			ow->select(addr);
+		if (ow->last_err == 0)
+			ow->write (0x5A);
+		if (ow->last_err == 0)
+			ow->write (pio);
+		if (ow->last_err == 0)
+			ow->write (0xFF & ~(pio));
+		//if (ow->last_err == 0)
+		// lets try a pseudo read at least to avoid
+		// a hung dev
+			r = ow->read();
 		if (r == 0xAA)
 			break;
-	} while (retry-- > 0);
-
-	if (r != 0xAA) {
-		Serial.print(F("data "));
+		if (err == 0)
+			err = ow->last_err;
+		delay(5);
+	} while (--retry > 0);
+	// if err && retry > 0: err = 0
+#ifdef DEBUG
+	if ((err && retry == 0) || (err && debug > 0)) {
+		log_time();
+		Serial.print(F("PioSet "));
+		Serial.print(bus);
+		Serial.print(F("."));
+		Serial.print(addr[1]);
+		Serial.print(F(" error ="));
+		Serial.print(err);
+		Serial.print(F(" data="));
 		Serial.print(pio, HEX);
-		Serial.println(F(" write error"));
-		return r;
+		if (retry == 0)
+			Serial.println(F(" ERR! "));
+		else {
+			Serial.print(F(" retry= "));
+			Serial.println(retry);
+		}
 	}
-	ds2408LatchReset(addr);
-	// TODO update cache
-	pio_data[bus][addr[1] & 0x0f] = pio;
-
+#endif
+	if (r == 0xAA) {
+		// success
+		ds2408LatchReset(addr);
+		// TODO update cache
+		pio_data[bus][addr[1] & 0x0f] = pio;
+	}
 	return r;
 #endif
+}
+
+/* reads and returns the Output latch state register
+
+TODO make sure, that the data is correct ... how? */
+uint8_t OwDevices::ds2408PioGet(byte bus, uint8_t* addr, uint8_t force)
+{
+	uint8_t res, d[10];
+
+	if (force == 0 && pio_data[bus][addr[1] & 0x0f] != 0)
+		return 	pio_data[bus][addr[1] & 0x0f];
+
+#if defined(AVRSIM)
+	return pio_data[bus][addr[1] & 0x0f];
+#endif
+
+	res = ds2408RegRead(bus, addr, d, false);
+	if (res != 0xaa) {
+		//Serial.print("Read error: ");
+		//Serial.println(res, HEX);
+	} else
+		pio_data[bus][addr[1] & 0x0f] = d[1];
+
+	return d[1];
 }
 
 /**
@@ -338,6 +384,8 @@ void OwDevices::ds2408CfgWrite(byte bus, byte adr[8], uint8_t* d, uint8_t len)
  * mode 0: start conversion
  * 1: set alarms and reset
  * 2: read temperature and scratchpad
+ * No retry handling because the data might not so important as next cycle
+ * will come
 */
 int16_t OwDevices::tempRead(byte busNr, byte addr[8], byte mode, uint8_t* hum)
 {

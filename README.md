@@ -110,3 +110,53 @@ If event data (0x40)
     read data (on event 9 bytes): type, bus, adr, latch, press, 16 bit data, seq, 0xaa
     seq: 1..0x7f
     read status again and repeat if needed
+
+### Handling events Implementation details:
+- check alarm status which resets the gpio
+   iic.i2cWriteSync(iicAdr, 2, Buffer.from([0xE1, 0xA8]));
+- read one byte and check for 0x40 otherwise cancel
+- request event data, selects status register
+  The controller copies the data over from the fifo
+  Send cmd = 0x1
+    iic.i2cWriteSync(iicAdr, 1, Buffer.from([0x1]));
+    release the bus iic.closeSync();
+- read status in a loop till 0
+    0 = ok, data is prepared
+    1 = busy/waiting to read data
+    0x80 no data: return
+- select data register, status is READY = 0x4
+    iic.i2cWriteSync(iicAdr, 1, Buffer.from([0x96]));
+    delay...?
+    iic.i2cReadSync(iicAdr, 9, rbuf);
+    rbuf[7] contains the sequence number
+- send ack
+    iic.i2cWriteSync(iicAdr, 2, Buffer.from([0x78, rbuf[7]]));
+
+## sending commands details
+    iic.i2cWriteSync(iicAdr, 2, Buffer.from([0xE1, 0xE1]));
+    delay(1);
+    do {
+        iic.i2cReadSync(iicAdr, 1, rbuf);
+        delay(1);
+    } while (rbuf[0] != 0);
+
+    iic.i2cWriteSync(iicAdr, 5, Buffer.from([0x3, bus, id, pio, <level>]));
+
+## Switch configuration
+
+sw : dumps the table
+sw r : reads the table from eeprom again
+sw s : saves the table into eeprom
+sw c : clears the table
+sw d <bus> <adr> <latch>: deletes a switch
+sw s <bus> <adr> <latch> <dst bus> <dst adr> <dst pio> [type]
+	add a switch
+sw t <timer type> <bus> <adr> <latch> <dst bus> <dst adr> <dst pio> [type]
+	Add a timed switch
+    Timed table	timer type: 1 = 20 sec, 2: 30 sec, 3: 1 min, 4: 2 min, 5: 5 mins ...
+    Timer on darkness: offset 10
+	Timer on darkness with soft off per time if supported (dimmable), time 5 secs: offset 20
+
+    latch 10 .. 17: long press
+    latch 0 .. 7: normal press
+    latch 20 .. 27: pressing

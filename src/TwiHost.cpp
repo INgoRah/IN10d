@@ -38,7 +38,8 @@ static uint8_t rxBuf[4];
 
 TwiHost::TwiHost()
 {
-	rdLen = 0;
+	rdLen = sizeof(hostData);
+	rdData = (uint8_t*)hostData;
 	cmd = 0xff;
 }
 
@@ -50,8 +51,6 @@ void TwiHost::begin(uint8_t slaveAdr)
 	Wire.begin(slaveAdr);
 	Wire.onReceive(receiveEvent);
 	Wire.onRequest(requestEvent);
-	// not changed, so no need to call this all the time
-	setData((uint8_t*)hostData, 9);
 }
 
 void TwiHost::onCommand( void (*function)(uint8_t, uint8_t) )
@@ -176,7 +175,7 @@ void TwiHost::command()
 
 			setStatus(STAT_PROCESSING);
 			dst.data = 0;
-			if (rxBytes < 4) {
+			if (rxBytes < 4 && debug > 0) {
 #ifdef EXT_DEBUG
 				Serial.print("rx cnt=");
 				Serial.println(rxBytes);
@@ -200,24 +199,23 @@ void TwiHost::command()
 				dst.da.type = 2;
 			else
 				dst.da.type = 0;
-#ifdef EXT_DEBUG
+#ifdef DEBUG
 			if (debug > 1) {
 				log_time();
-				Serial.print(dst.da.bus);
-				Serial.print(F("."));
-				Serial.print(dst.da.adr);
-				Serial.print(F("."));
-				Serial.print(dst.da.pio);
+				printDst(dst);
 				Serial.print(F(" level="));
 				Serial.println(level);
-
 			}
 #endif
 			// switch off I2C slave till done
 			if (swHdl.switchLevel(dst, level))
 				setStatus(STAT_OK);
-			else
+			else {
 				setStatus(STAT_NOPE);
+				log_time();
+				printDst(dst);
+				Serial.println(F(" Host cmd failed!"));
+			}
 			break;
 		}
 #if 0
@@ -293,20 +291,27 @@ void TwiHost::loop()
 {
 	if (cmd != 0xff) {
 		command();
-		// mark as handled
-		cmd = 0xff;
-		rxBytes = 0;
+		if (/*status != STAT_NOPE*/ 1) {
+			// mark as handled
+			cmd = 0xff;
+			rxBytes = 0;
+			// retry...
+			// return
+		}
 		// more bytes in the queue?
 	}
 	if (rxBytes > 0) {
 		/* should never happen */
-		Serial.print (F("Data not handled: "));
-		Serial.print (Wire.available());
+		if (debug > 0) {
+			Serial.print (F("Data not handled: "));
+			Serial.print (Wire.available());
+		}
 		if (Wire.available()) {
 			uint8_t d = Wire.read();
-
-			Serial.print (F(" Bytes, Data="));
-			Serial.println (d, HEX);
+			if (debug > 0) {
+				Serial.print (F(" Bytes, Data="));
+				Serial.println (d, HEX);
+			}
 		}
 		rxBytes = 0;
 	}
@@ -370,12 +375,6 @@ void TwiHost::addEvent(union d_adr_8 dst, uint16_t data, uint8_t type)
 	addEvent(type, src.data, data);
 }
 
-void TwiHost::setData(uint8_t *data, uint8_t len)
-{
-	rdData = data;
-	rdLen = len;
-}
-
 void TwiHost::handleAck(uint8_t ack)
 {
 	if (ack == _seq) {
@@ -389,11 +388,13 @@ void TwiHost::handleAck(uint8_t ack)
 		host.setStatus(STAT_OK);
 	} else {
 		host.setStatus(STAT_WRONG);
-		log_time();
-		Serial.print (F("ACK mismatch "));
-		Serial.print (ack, HEX);
-		Serial.print (F(" != "));
-		Serial.println (_seq, HEX);
+		if (debug > 0) {
+			log_time();
+			Serial.print (F("ACK mismatch "));
+			Serial.print (ack, HEX);
+			Serial.print (F(" != "));
+			Serial.println (_seq, HEX);
+		}
 	}
 }
 
@@ -409,16 +410,23 @@ void TwiHost::receiveEvent(int howMany) {
 	d = Wire.read();
 	if (cmd != 0xff &&
 		(d == CMD_SWITCH || d == CMD_EVT_DATA)) {
-		Serial.print (F(" cmd "));
-		Serial.print (cmd);
-		Serial.print (F(" not yet handled, Stat  "));
-		Serial.print (host.status, HEX);
-		Serial.print (F(" new "));
-		Serial.println (d, HEX);
-		Serial.print (F("last ACK "));
-		Serial.print (host._ack, HEX);
-		Serial.print (F(" != "));
-		Serial.println (host._seq, HEX);
+		/* TODO: Handle queue
+		5:27:37 1.1.2 level=100
+ 		cmd 3 not yet handled, Stat  2 new 3
+		last ACK 4A != 4A
+		*/
+		if (debug > 0) {
+			Serial.print (F(" cmd "));
+			Serial.print (cmd);
+			Serial.print (F(" not yet handled, Stat  "));
+			Serial.print (host.status, HEX);
+			Serial.print (F(" new "));
+			Serial.println (d, HEX);
+			Serial.print (F("last ACK "));
+			Serial.print (host._ack, HEX);
+			Serial.print (F(" != "));
+			Serial.println (host._seq, HEX);
+		}
 	}
 	/* assert if not at least 1? */
 	switch (d)
@@ -462,9 +470,7 @@ void TwiHost::receiveEvent(int howMany) {
 		swHdl.dim_on_lvl = Wire.read();
 		break;
 	case CMD_ACK:
-		if (howMany < 2) {
-			Serial.println (F("ACK underflow"));
-		} else
+		if (howMany == 2)
 			host.handleAck(Wire.read());
 		break;
 	case CMD_EVT_DATA: // get event data

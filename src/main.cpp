@@ -96,20 +96,6 @@ unsigned long ledOnTime = 0;
 #endif
 int i2cRead();
 
-void log_time()
-{
-		Serial.print(hour);
-		Serial.print(F(":"));
-		if (min < 10)
-			Serial.print(F("0"));
-		Serial.print(min);
-		Serial.print(F(":"));
-		if (sec < 10)
-			Serial.print(F("0"));
-		Serial.print(sec);
-		Serial.print(F(" "));
-}
-
 /*
 * Function definitions
 */
@@ -132,7 +118,7 @@ void setup() {
 
 	debug = 1;
 	light = 125;
-	Serial.print(F("One Wire Control "));
+	Serial.print(F("IN10D "));
 	Serial.println(F(VERS_TAG));
 	digitalWrite(3, 1);
 	pinMode(3, OUTPUT);
@@ -259,9 +245,9 @@ ISR (PCINT2_vect) // handle pin change interrupt for A0 to A4 here
 	pind_old = pind;
 }
 
+#ifdef EXT_DEBUG
 static void ledBlink()
 {
-#ifdef EXT_DEBUG
 	if (millis() - ledOnTime > 300) {
 		if (ledOn) {
 			ledOnTime = millis();
@@ -272,19 +258,13 @@ static void ledBlink()
 			ledOnTime = millis();
 		}
 	}
-#endif
 }
+#endif
 
 void loop()
 {
 	static unsigned long sec_time = 0;
-#if 0
-	// was not working
-	if (Wire.getWireTimeoutFlag()) {
-		Wire.clearWireTimeoutFlag();
-		Serial.println(F("I2C timeout detected!"));
-	}
-#endif
+
 	host.loop();
 	if (millis() > (sec_time + 995)) {
 		sec_time = millis();
@@ -327,12 +307,13 @@ void loop()
 			swHdl.switchHandle(0, 9, 0x8);
 #endif
 		if (pinSignal & 0x8) {
-			log_time();
-			Serial.println(F("Count"));
+			if (debug > 4) {
+				log_time();
+				Serial.println(F("Count"));
+			}
 			pow_imp++;
 			host.addEvent (POWER_IMP, 0, 9, pow_imp);
 		}
-
 		pinSignal = 0;
 	}
 	/* if there is any host data transfer, avoid conflicts on the I2C bus
@@ -343,24 +324,38 @@ void loop()
 	swHdl.loop();
 	if (alarmSignal) {
 		alarmPolling = millis();
-		host.setAlarm();
+		//host.setAlarm();
+		/* the alarmhandler will set the alarm signal to the host
+		   after the event data is prepared. Otherwise a host could
+		   disturb our switching process */
 		if (swHdl.mode & MODE_ALRAM_HANDLING) {
 			byte retry;
 			for (byte i = 0; i < MAX_BUS; i++) {
 				if (wdt[i]->alarm) {
-					retry = 5;
+#define ALARM_SRCH_RETRY 20
+					retry = ALARM_SRCH_RETRY - 1;
 					while (!swHdl.alarmHandler(i)) {
-						if (retry-- == 0)
+						wdr();
+						if (--retry == 0)
 							break;
+						delay (ALARM_SRCH_RETRY - retry);
 					}
-					wdt[i]->alarm = false;
+					if (retry > 0) {
+						wdt[i]->alarm = false;
+					} else {
+						// lets retry next loop
+						log_time();
+						Serial.println(F("alarm retry exceeded!"));
+						wdr();
+						return;
+					}
 				}
 			}
-		}
+		} else
+			host.setAlarm();
 		alarmSignal--;
-		// ds->reset();
 	}
-	if (millis() - alarmPolling > 2000) {
+	if (millis() - alarmPolling > 3000) {
 		alarmPolling = millis();
 		if (swHdl.mode & MODE_ALRAM_POLLING) {
 			for (byte i = 0; i < MAX_BUS;i++)
