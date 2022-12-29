@@ -88,7 +88,7 @@ public:
 #endif
 
 private:
-
+  uint8_t ch;
 	uint8_t _read();
 	void setReadPtr(uint8_t readPtr);
 

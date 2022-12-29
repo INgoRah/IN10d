@@ -132,7 +132,7 @@ void setup() {
 
 	debug = 1;
 	light = 125;
-	Serial.print(F("One Wire Control "));
+	Serial.print(F("IN10D "));
 	Serial.println(F(VERS_TAG));
 	digitalWrite(3, 1);
 	pinMode(3, OUTPUT);
@@ -278,13 +278,7 @@ static void ledBlink()
 void loop()
 {
 	static unsigned long sec_time = 0;
-#if 0
-	// was not working
-	if (Wire.getWireTimeoutFlag()) {
-		Wire.clearWireTimeoutFlag();
-		Serial.println(F("I2C timeout detected!"));
-	}
-#endif
+
 	host.loop();
 	if (millis() > (sec_time + 995)) {
 		sec_time = millis();
@@ -354,11 +348,14 @@ void loop()
 				if (wdt[i]->alarm) {
 					retry = 5;
 					while (!swHdl.alarmHandler(i)) {
-						if (retry-- == 0)
+						if (retry-- == 0) {
+							Serial.println(F("alarm retry exceeded!"));
 							break;
+						}
 						delay (1);
 					}
-					wdt[i]->alarm = false;
+					if (retry > 0)
+						wdt[i]->alarm = false;
 				}
 			}
 		} else

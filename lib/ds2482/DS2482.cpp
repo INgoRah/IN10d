@@ -37,14 +37,15 @@
 DS2482::DS2482(uint8_t addr)
 {
 	mAddress = 0x18 | addr;
+	ch = 0xff;
 }
 
 //-------helpers
 void DS2482::begin()
 {
 	status = stOk;
-	// timeout 5 ms
-	Wire.setWireTimeout(5000, true);
+	// timeout 10 ms
+	Wire.setWireTimeout(10000, true);
 	Wire.beginTransmission(mAddress);
 }
 
@@ -53,13 +54,16 @@ void DS2482::end()
 	uint8_t ret;
 
 	ret = Wire.endTransmission();
-	if (ret) {
-		Serial.print("I2C tx err=");
-		Serial.println(ret);
+	if (ret)
 		status = stTimeout;
-	}
 }
 
+
+/* This function is called only from this class
+   Error handling (bus error from end) needs
+   to be handled inside by checking the status
+   member
+*/
 void DS2482::setReadPtr(uint8_t readPtr)
 {
 	begin();
@@ -120,6 +124,7 @@ uint8_t DS2482::busyWait(bool setPtr)
 //----------interface
 void DS2482::resetDev()
 {
+	ch = 0xff;
 	begin();
 	Wire.write(0xf0);
 	end();
@@ -127,6 +132,7 @@ void DS2482::resetDev()
 
 bool DS2482::configureDev(uint8_t config)
 {
+	ch = 0xff;
 	busyWait(true);
 	begin();
 	Wire.write(0xd2);
@@ -142,7 +148,11 @@ bool DS2482::selectChannel(uint8_t channel)
 	static const byte chan_r[8] = { 0xB8, 0xB1, 0xAA, 0xA3, 0x9C, 0x95, 0x8E, 0x87 };
 	static const byte chan_w[8] = { 0xF0, 0xE1, 0xD2, 0xC3, 0xB4, 0xA5, 0x96, 0x87 };
 
-	busyWait(true);
+	if (ch == channel)
+		return true;
+	ch = channel;
+	if (busyWait(true) == DS2482_STATUS_INVAL)
+		return false;
 	begin();
 	Wire.write(0xc3);
 	Wire.write(chan_w[channel]);
@@ -161,12 +171,13 @@ bool DS2482::selectChannel(uint8_t channel)
 
 bool DS2482::reset()
 {
-	busyWait(true);
+	if (busyWait(true) == DS2482_STATUS_INVAL)
+		return false;
 	begin();
 	Wire.write(0xb4);
 	end();
 	if (status == stTimeout) {
-		Serial.println("reset (2) TO");
+		Serial.println(F("reset (2) TO"));
 		return false;
 	}
 
@@ -178,22 +189,33 @@ bool DS2482::reset()
 uint8_t DS2482::write(uint8_t b, uint8_t power)
 {
 	(void)power;
-	busyWait(true);
+	if (busyWait(true) == DS2482_STATUS_INVAL)
+		return 0xff;
 	begin();
 	Wire.write(0xa5);
 	Wire.write(b);
 	end();
+	if (status == stTimeout) {
+		Serial.println(F("Write Err"));
+		return 0xff;
+	}
 
 	return b;
 }
 
 uint8_t DS2482::read()
 {
-	busyWait(true);
+	if (busyWait(true) == DS2482_STATUS_INVAL)
+		return 0xff;
 	begin();
 	Wire.write(0x96);
 	end();
-	busyWait();
+	if (status == stTimeout) {
+		Serial.println(F("Read Err (1)"));
+		return 0xff;
+	}
+	if (busyWait(true) == DS2482_STATUS_INVAL)
+		return 0xff;
 	setReadPtr(PTR_READ);
 	return _read();
 }

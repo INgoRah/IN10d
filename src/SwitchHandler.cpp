@@ -909,7 +909,7 @@ bool SwitchHandler::alarmHandler(uint8_t busNr)
 
 			ret = _devs->ds2408RegRead(busNr, adr, data);
 			/* fill data for use in switchHandle */
-			if (ret == 0xaa || ret = 0xff) {
+			if (ret == 0xaa || ret == 0xff) {
 				// loop over all set bits
 				// cur_latch is reduced by each call to bitnumber
 				cur_latch = data[2];
