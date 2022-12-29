@@ -822,9 +822,6 @@ bool SwitchHandler::switchHandle(uint8_t busNr, uint8_t adr1)
 					struct _timer_item* tmr = timerItem(p->dst.data);
 					if (tmr != NULL)
 						tmr->ms = millis();
-					else
-						// switch off
-						actorHandle(p->dst, OFF);
 				}
 			}
 		}
@@ -908,8 +905,11 @@ bool SwitchHandler::alarmHandler(uint8_t busNr)
 			return true;
 		}
 		if (adr[0] == 0x29) {
+			uint8_t ret;
+
+			ret = _devs->ds2408RegRead(busNr, adr, data);
 			/* fill data for use in switchHandle */
-			if (_devs->ds2408RegRead(busNr, adr, data) == 0xaa) {
+			if (ret == 0xaa || ret = 0xff) {
 				// loop over all set bits
 				// cur_latch is reduced by each call to bitnumber
 				cur_latch = data[2];

@@ -117,6 +117,10 @@ uint8_t OwDevices::ds2408LatchReset(uint8_t* addr)
  * [5] Status
  * [6] Status ext 1, used for press time detection
  * [7] Status ext 2
+ *
+ * Returns 0xaa in case of successful read and latch reset
+ * Returns 0xff in case of latch reset issue
+ * Returns 0 in case of bus error or timeout -> to be repeated
  * */
 uint8_t OwDevices::ds2408RegRead(byte bus, uint8_t* addr, uint8_t* data, bool latch_reset)
 {
@@ -133,10 +137,10 @@ uint8_t OwDevices::ds2408RegRead(byte bus, uint8_t* addr, uint8_t* data, bool la
 		/* read latch */
 		ret = ow->selectChannel(bus);
 		if (!ret)
-			return 0xff;
+			return 0;
 		ret = ow->reset();
 		if (!ret)
-			return 0xff;
+			return 0;
 		ow->select(addr);
 		// read data registers
 		buf[0] = 0xF0;    // Read PIO Registers
@@ -151,11 +155,12 @@ uint8_t OwDevices::ds2408RegRead(byte bus, uint8_t* addr, uint8_t* data, bool la
 			break;
 	} while (retry-- > 0);
 	if (data[5] == 0xff)
-		return 0xff;
+		return 0;
 	// TODO update cache here?
 	pio_data[bus][addr[1] & 0x0f] = data[1];
 	if (!latch_reset)
 		return 0xaa;
+	// clear the alarm status
 	tmp = ds2408LatchReset(addr);
 
 	if (tmp != 0xAA)
@@ -239,8 +244,8 @@ uint8_t OwDevices::ds2408PioGet(byte bus, uint8_t* addr)
 
 	res = ds2408RegRead(bus, addr, d, false);
 	if (res != 0xaa) {
-		Serial.print("Read error: ");
-		Serial.println(res, HEX);
+		//Serial.print("Read error: ");
+		//Serial.println(res, HEX);
 	} else
 		pio_data[bus][addr[1] & 0x0f] = d[1];
 
