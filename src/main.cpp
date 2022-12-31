@@ -49,6 +49,7 @@ A6 - Light sensor (analog)
 #define HOST_SLAVE_ADR 0x2f
 
 byte debug;
+statc bool err = 0;
 
 /*
  * Objects
@@ -346,16 +347,28 @@ void loop()
 			byte retry;
 			for (byte i = 0; i < MAX_BUS; i++) {
 				if (wdt[i]->alarm) {
-					retry = 5;
+					retry = 10;
 					while (!swHdl.alarmHandler(i)) {
-						if (retry-- == 0) {
-							Serial.println(F("alarm retry exceeded!"));
+						if (retry-- == 0)
 							break;
-						}
-						delay (1);
+						delay (2);
 					}
-					if (retry > 0)
+					if (retry > 0) {
 						wdt[i]->alarm = false;
+						if (err) {
+							log_time();
+							Serial.println(F("Error recoverd"));
+							err = false;
+						}
+					}
+					else {
+						// lets retry next loop
+						err = true;
+						wdr();
+						log_time();
+						Serial.println(F("alarm retry exceeded!"));
+						return;
+					}
 				}
 			}
 		} else

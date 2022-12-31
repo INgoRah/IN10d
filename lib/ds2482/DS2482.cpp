@@ -25,6 +25,7 @@
 
   https://github.com/paeaetech/paeae.git
 */
+#include <main.h>
 #include "Arduino.h"  // according http://blog.makezine.com/2011/12/01/arduino-1-0-is-out-heres-what-you-need-to-know/
 
 #include "DS2482.h"
@@ -102,7 +103,8 @@ uint8_t DS2482::busyWait(bool setPtr)
 	if (setPtr) {
 		setReadPtr(PTR_STATUS);
 		if (status == stTimeout) {
-			Serial.println("ReadPtr TO");
+			log_time();
+			Serial.println(F("ReadPtr TO"));
 			return DS2482_STATUS_INVAL;
 		}
 	} else
@@ -111,8 +113,9 @@ uint8_t DS2482::busyWait(bool setPtr)
 
 	while((res = _read()) & DS2482_STATUS_BUSY)
 	{
-		if (--loopCount == 0) {
-			Serial.println("BusyWait TO");
+		if (--loopCount == 0 || status == stTimeout) {
+			log_time();
+			Serial.println(F("BusyWait TO"));
 			status = stTimeout;
 			return DS2482_STATUS_INVAL;
 		}
@@ -150,7 +153,6 @@ bool DS2482::selectChannel(uint8_t channel)
 
 	if (ch == channel)
 		return true;
-	ch = channel;
 	if (busyWait(true) == DS2482_STATUS_INVAL)
 		return false;
 	begin();
@@ -165,8 +167,11 @@ bool DS2482::selectChannel(uint8_t channel)
 	to the channel register */
 
 	uint8_t check = _read();
+	if (check != chan_r[channel])
+		return false;
 
-	return check == chan_r[channel];
+	ch = channel;
+	return true;
 }
 
 bool DS2482::reset()
