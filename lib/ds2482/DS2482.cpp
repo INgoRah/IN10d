@@ -25,7 +25,6 @@
 
   https://github.com/paeaetech/paeae.git
 */
-#include <main.h>
 #include "Arduino.h"  // according http://blog.makezine.com/2011/12/01/arduino-1-0-is-out-heres-what-you-need-to-know/
 
 #include "DS2482.h"
@@ -103,7 +102,6 @@ uint8_t DS2482::busyWait(bool setPtr)
 	if (setPtr) {
 		setReadPtr(PTR_STATUS);
 		if (status == stTimeout) {
-			log_time();
 			Serial.println(F("ReadPtr TO"));
 			return DS2482_STATUS_INVAL;
 		}
@@ -114,7 +112,6 @@ uint8_t DS2482::busyWait(bool setPtr)
 	while((res = _read()) & DS2482_STATUS_BUSY)
 	{
 		if (--loopCount == 0 || status == stTimeout) {
-			log_time();
 			Serial.println(F("BusyWait TO"));
 			status = stTimeout;
 			return DS2482_STATUS_INVAL;

@@ -49,7 +49,7 @@ A6 - Light sensor (analog)
 #define HOST_SLAVE_ADR 0x2f
 
 byte debug;
-statc bool err = 0;
+static bool err = 0;
 
 /*
  * Objects
@@ -260,9 +260,9 @@ ISR (PCINT2_vect) // handle pin change interrupt for A0 to A4 here
 	pind_old = pind;
 }
 
+#ifdef EXT_DEBUG
 static void ledBlink()
 {
-#ifdef EXT_DEBUG
 	if (millis() - ledOnTime > 300) {
 		if (ledOn) {
 			ledOnTime = millis();
@@ -273,8 +273,8 @@ static void ledBlink()
 			ledOnTime = millis();
 		}
 	}
-#endif
 }
+#endif
 
 void loop()
 {
@@ -322,7 +322,7 @@ void loop()
 			swHdl.switchHandle(0, 9, 0x8);
 #endif
 		if (pinSignal & 0x8) {
-			if (debug > 3) {
+			if (debug > 4) {
 				log_time();
 				Serial.println(F("Count"));
 			}
