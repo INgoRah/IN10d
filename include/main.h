@@ -14,6 +14,9 @@
 #define MAX_ADR 13
 
 extern void log_time();
+extern void printDst8(union d_adr_8 dst);
+extern void printDst(union pio dst);
+extern void printSrc(union s_adr src);
 
 extern byte debug;
 extern uint8_t min;

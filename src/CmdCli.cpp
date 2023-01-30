@@ -28,6 +28,9 @@ extern OneWireBase *ds;
 extern WireWatchdog* wdt[MAX_BUS];
 extern SwitchHandler swHdl;
 extern void hostCommand(uint8_t cmd, uint8_t data);
+extern uint8_t sec;
+extern uint8_t min;
+extern uint8_t hour;
 
 CmdCli* me;
 
@@ -43,6 +46,9 @@ static String inputString = "";         // a String to hold incoming data
 static OwDevices* ow;
 static byte curBus, curAdr, curPio;
 
+/*
+ * Global functions
+ */
 void printDst(union pio dst)
 {
 	Serial.print(dst.da.bus, HEX);
@@ -69,6 +75,20 @@ void printSrc(union s_adr src)
 	Serial.print(src.sa.adr);
 	Serial.print(F("."));
 	Serial.print(src.sa.press * 10 + src.sa.latch);
+}
+
+void log_time()
+{
+	Serial.print(hour);
+	Serial.print(F(":"));
+	if (min < 10)
+		Serial.print(F("0"));
+	Serial.print(min);
+	Serial.print(F(":"));
+	if (sec < 10)
+		Serial.print(F("0"));
+	Serial.print(sec);
+	Serial.print(F(" "));
 }
 
 /* Based on code found in https://forum.arduino.cc/index.php?topic=90.0 */
@@ -222,7 +242,7 @@ void CmdCli::funcStatus(CmdParser *myParser)
 			res = false;
 	}
 	ow->adrGen(curBus, adr, curAdr);
-#if EXT_DEBUG
+#ifdef EXT_DEBUG
 	if (debug) {
 		for (i = 0; i < 7; i++) {
 			Serial.print(adr[i], HEX);
@@ -291,7 +311,7 @@ void CmdCli::funcTemp(CmdParser *myParser)
 	adr[0] = 0x28;
 	adr[1] = curAdr;
 	ow->adrGen(curBus, adr, adr[1]);
-#if EXT_DEBUG
+#ifdef EXT_DEBUG
 	if (debug) {
 		int i;
 		for (i = 0; i < 7; i++) {

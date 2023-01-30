@@ -49,7 +49,6 @@ A6 - Light sensor (analog)
 #define HOST_SLAVE_ADR 0x2f
 
 byte debug;
-static bool err = 0;
 
 /*
  * Objects
@@ -96,20 +95,6 @@ static void ledBlink();
 unsigned long ledOnTime = 0;
 #endif
 int i2cRead();
-
-void log_time()
-{
-		Serial.print(hour);
-		Serial.print(F(":"));
-		if (min < 10)
-			Serial.print(F("0"));
-		Serial.print(min);
-		Serial.print(F(":"));
-		if (sec < 10)
-			Serial.print(F("0"));
-		Serial.print(sec);
-		Serial.print(F(" "));
-}
 
 /*
 * Function definitions
@@ -347,26 +332,21 @@ void loop()
 			byte retry;
 			for (byte i = 0; i < MAX_BUS; i++) {
 				if (wdt[i]->alarm) {
-					retry = 10;
+#define ALARM_SRCH_RETRY 20
+					retry = ALARM_SRCH_RETRY - 1;
 					while (!swHdl.alarmHandler(i)) {
-						if (retry-- == 0)
+						wdr();
+						if (--retry == 0)
 							break;
-						delay (2);
+						delay (ALARM_SRCH_RETRY - retry);
 					}
 					if (retry > 0) {
 						wdt[i]->alarm = false;
-						if (err) {
-							log_time();
-							Serial.println(F("Error recoverd"));
-							err = false;
-						}
-					}
-					else {
+					} else {
 						// lets retry next loop
-						err = true;
-						wdr();
 						log_time();
 						Serial.println(F("alarm retry exceeded!"));
+						wdr();
 						return;
 					}
 				}
@@ -374,9 +354,8 @@ void loop()
 		} else
 			host.setAlarm();
 		alarmSignal--;
-		// ds->reset();
 	}
-	if (millis() - alarmPolling > 2000) {
+	if (millis() - alarmPolling > 3000) {
 		alarmPolling = millis();
 		if (swHdl.mode & MODE_ALRAM_POLLING) {
 			for (byte i = 0; i < MAX_BUS;i++)

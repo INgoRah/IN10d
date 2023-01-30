@@ -48,6 +48,48 @@
 #define DS2482_STATUS_DIR	(1<<7)
 #define DS2482_STATUS_INVAL	0xfd
 
+enum DS2482_ERR {
+  ERR_NONE = 0,
+  /* length to long for buffer, should never occur */
+  ERR_WIRE_LEN = 1,
+  /* address send, NACK received */
+  ERR_WIRE_ADRNACK = 2,
+  /* data send, NACK received */
+  ERR_WIRE_DATANACK = 3,
+  /* other twi error (lost bus arbitration, bus error, ..) */
+  ERR_WIRE_GEN = 4,
+  /* Timeout */
+  ERR_WIRE_TO = 5,
+  /* requestFrom return 0: no data cause of timeout */
+  ERR_READ = 6,
+
+  ERR_BUSYWAIT = 10,
+  /* 12, 13, 14, 15 */
+  ERR_BUSYWAIT_RD = 17,
+  ERR_BUSYWAIT_TO = 18,
+
+  ERR_CHSEL1 = 20,
+  /* ..1, ..2, ..3, ..4, ..5 */
+  ERR_CHSEL2 = 40,
+  /* ..1, ..2, ..3, ..4, ..5 */
+  ERR_CHCHK = 47,
+
+  ERR_RESET1 = 40,
+  ERR_RESET2 = 60,
+  ERR_RESET3 = 55,
+
+  ERR_WRITE1 = 64,
+  ERR_WRITE2 = 82,
+  ERR_READ1 = 80,
+  ERR_READ2 = 85,
+  ERR_READ3 = 90,
+  ERR_SELECT1 = 30, /* = 100 - 110 (30 + write 1,2) */
+  ERR_SELECT2 = 40, /* = 110 - 120 (40 + write 1,2) */
+  ERR_SRCH1 = 100, /* (reset + 100) */
+  ERR_SRCH2 = 140,  /* write + 150 */
+  ERR_NEXT
+};
+
 class DS2482 : public OneWireBase
 {
 public:
@@ -56,18 +98,15 @@ public:
 	DS2482(uint8_t address);
 	~DS2482() {}
 
-	bool configureDev(uint8_t config);
+  bool configureDev(uint8_t config);
 	void resetDev();
 
 	bool reset(); // return true if presence pulse is detected
 	bool selectChannel(uint8_t channel);
-	uint8_t wireReadStatus(bool setPtr=false);
 
 	uint8_t write(uint8_t b, uint8_t power = 0 );
 	uint8_t read();
 
-	void wireWriteBit(uint8_t bit);
-	uint8_t wireReadBit();
     // Issue a 1-Wire rom select command, you do the reset first.
     void select(const  uint8_t rom[8]);
 	// Issue skip rom
