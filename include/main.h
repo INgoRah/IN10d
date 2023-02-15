@@ -24,5 +24,6 @@ extern uint8_t hour;
 extern uint8_t sun;
 extern uint8_t light;
 extern byte light_sensor;
+extern unsigned long host_lock;
 
 #endif

@@ -89,7 +89,10 @@ F0 - reset
 5B - search next device, returns 0 if nothing found or | id | adr [8]
 01 - read one event from fifo, status: busy,ok,no_data
 02 - add switch entry:  type, bus, adr1, latch, press [0..2], da.bus,da.adr,da.pio
-03 - write PIO: type, bus, adr1, pio
+03 - write PIO: type, bus, adr1, pio and release lock, check for an event acknowledging the change
+E2 - lock i2c bus and get status, if no events in the queue the lock is released again
+78 - Handle ack: pass the sequence number to be acked, this releases the lock
+
 
 status: alarm bus 3 | alarm bus 2 | alarm bus 1 | alarm bus0
 bus select
@@ -112,12 +115,12 @@ If event data (0x40)
     read status again and repeat if needed
 
 ### Handling events Implementation details:
-- check alarm status which resets the gpio
+- check alarm status which resets the gpio, ALARM_STATUS_REGISTER
    iic.i2cWriteSync(iicAdr, 2, Buffer.from([0xE1, 0xA8]));
 - read one byte and check for 0x40 otherwise cancel
 - request event data, selects status register
   The controller copies the data over from the fifo
-  Send cmd = 0x1
+  Send CMD_EVT_DATA (= 0x1)
     iic.i2cWriteSync(iicAdr, 1, Buffer.from([0x1]));
     release the bus iic.closeSync();
 - read status in a loop till 0
@@ -130,11 +133,15 @@ If event data (0x40)
     iic.i2cReadSync(iicAdr, 9, rbuf);
     rbuf[7] contains the sequence number
 - send ack
+    This will clear the fifo entry and increases the sequence number.
+    This also may release the I2C host bus
     iic.i2cWriteSync(iicAdr, 2, Buffer.from([0x78, rbuf[7]]));
 
 ## sending commands details
+    set read ptr to DS2482_STATUS_REGISTER
     iic.i2cWriteSync(iicAdr, 2, Buffer.from([0xE1, 0xE1]));
     delay(1);
+    // wait for ready
     do {
         iic.i2cReadSync(iicAdr, 1, rbuf);
         delay(1);

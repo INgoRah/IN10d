@@ -140,12 +140,12 @@ void CmdCli::begin(OwDevices* devs)
 	cmdCallback.addCmd("cfg", &funcCfg);	// 6
 	cmdCallback.addCmd("sw", &funcSwCmd);	// 7
 	cmdCallback.addCmd("t", &funcTemp);		// 8
+	cmdCallback.addCmd("log", &funcLog);	// 9
 	//cmdCallback.addCmd("time", &funcTime);
-	//cmdCallback.addCmd("c", &funcCmd);		// 9
+	//cmdCallback.addCmd("c", &funcCmd);		// 10
 #ifdef EXT_DEBUG
-	cmdCallback.addCmd("pset", &funcPinSet); // 9
-	cmdCallback.addCmd("pget", &funcPinGet); // 10
-	cmdCallback.addCmd("log", &funcLog); // 11
+	cmdCallback.addCmd("pset", &funcPinSet); // 10
+	cmdCallback.addCmd("pget", &funcPinGet); // 11
 #endif
 #ifdef CHGID_CMD
 	cmdCallback.addCmd("id", &funcChgId);		// 9 or 12
@@ -265,6 +265,10 @@ void CmdCli::funcPio(CmdParser *myParser)
 	uint8_t level;
 	union pio dst;
 
+	if (myParser->getParamCount() == 0) {
+		ow->cacheInit();
+		return;
+	}
 	if (myParser->getParamCount() != 4 && myParser->getParamCount() != 1) {
 		Serial.print(myParser->getParamCount());
 		Serial.println(F(", need (bus adr pio) level !"));
@@ -771,6 +775,7 @@ void CmdCli::funcPinGet(CmdParser *myParser)
 	Serial.print(F(" val: "));
 	Serial.print(val);
 }
+#endif
 
 #include "TwiHost.h"
 extern TwiHost host;
@@ -809,7 +814,6 @@ void CmdCli::funcLog(CmdParser *myParser)
 	}
 	swHdl.status();
 }
-#endif
 
 #ifdef CHGID_CMD
 void CmdCli::funcChgId(CmdParser *myParser)
@@ -910,7 +914,8 @@ void serialEvent() {
 		if (inChar == 0x0d) {
 			Serial.println();
 			if (inputString.length() == 0) {
-				Serial.println(F("\now:# "));
+				Serial.print(F("\now:# "));
+				Serial.flush();
 				return;
 			}
 			stringComplete = true;

@@ -20,6 +20,7 @@
 #define STAT_READY 	0x04
 #define STAT_FAIL 	0xCC
 
+#define STAT_LOCK 0x20
 #define STAT_EVT  	0x40
 #define STAT_NO_DATA 0x80
 

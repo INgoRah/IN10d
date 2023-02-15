@@ -55,6 +55,25 @@ void OwDevices::begin(OneWireBase *ds)
 	}
 }
 
+void OwDevices::cacheInit()
+{
+	uint8_t adr[8];
+
+	for (int i = 0; i < MAX_BUS; i++) {
+		wdt_reset();
+		ow->selectChannel(i);
+		ow->reset();
+		ow->reset_search();
+		// search devs
+		while (ow->search(adr)) {
+			wdt_reset();
+			if (adr[0] == 0x29) {
+				ds2408PioGet(i, adr, true);
+			}
+		}
+	}
+}
+
 void OwDevices::adrGen(uint8_t bus, uint8_t adr[8], uint8_t id)
 {
 	adr[1] = id; // id selector

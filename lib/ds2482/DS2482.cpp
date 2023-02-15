@@ -276,7 +276,6 @@ uint8_t DS2482::write(uint8_t b, uint8_t power)
 	if (last_err != ERR_NONE) {
 		/* err can be 1..5 */
 		last_err += ERR_WRITE2;
-		Serial.println(F("Write Err"));
 		return 0xff;
 	}
 
@@ -298,6 +297,7 @@ uint8_t DS2482::write(uint8_t b, uint8_t power)
 * 103 .. data send, NACK received
 * 104 .. other twi error (lost bus arbitration, bus error, ..)
 * 105 .. timeout
+* 107 .. read error / timeout in 2nd busywait
 */
 uint8_t DS2482::read()
 {
@@ -315,7 +315,6 @@ uint8_t DS2482::read()
 	}
 	if (busyWait(true) == DS2482_STATUS_INVAL) {
 		last_err += ERR_READ3;
-		Serial.println(F("TO in read (2)"));
 		return 0xff;
 	}
 	setReadPtr(PTR_READ);
@@ -333,7 +332,6 @@ void DS2482::select(const uint8_t rom[8])
 	write(OW_MATCH_ROM);
 	if (last_err != ERR_NONE) {
 		last_err += ERR_SELECT1;
-		Serial.println(F("TO in select"));
 		return;
 	}
 	for (int i = 0; i < 8; i++) {
@@ -369,7 +367,7 @@ bool DS2482::search(uint8_t *newAddr, bool search_mode)
 
 	if (!reset()) {
 		last_err += ERR_SRCH1;
-		Serial.println(F("TO in search from reset"));
+		//Serial.println(F("TO in search from reset"));
 		return false;
 	}
 

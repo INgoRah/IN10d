@@ -21,6 +21,7 @@ class OwDevices
 	public:
 		OwDevices() {;}
 		void begin(OneWireBase *ds);
+		void cacheInit();
 
 		void adrGen(byte bus, byte adr[8], uint8_t id);
 		uint8_t ds2408LatchReset(uint8_t* addr);

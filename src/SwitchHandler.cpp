@@ -216,7 +216,7 @@ bool SwitchHandler::timerUpdate(union d_adr_8 dst, uint8_t typ)
 
 		if (tmr->secs == 0 || tmr->dst.data == dst.data) {
 #ifdef EXT_DEBUG
-			if (debug > 1) {
+			if (debug > 2) {
 				if (tmr->secs)
 					Serial.print(F("update timer "));
 				else {
@@ -233,7 +233,7 @@ bool SwitchHandler::timerUpdate(union d_adr_8 dst, uint8_t typ)
 			tmr->dst.data = dst.data;
 			tmr->ms = millis();
 #ifdef EXT_DEBUG
-			if (debug > 1) {
+			if (debug > 2) {
 				printDst8(dst);
 				Serial.println();
 			}
@@ -314,6 +314,7 @@ void SwitchHandler::loop()
 	for (i = 0; i < MAX_TIMER; i++) {
 		struct _timer_item* tmr = &tmr_list[i];
 
+		wdt_reset();
 		if (tmr->ms == 0) {
 			if (tmr->secs == 0)
 				/* nothing to do */
@@ -324,13 +325,13 @@ void SwitchHandler::loop()
 		}
 		/* this is the off state handling, timer expired */
 		if (millis() > tmr->ms + (tmr->secs * 1000)) {
-				if (debug > 2) {
-					log_time();
-					Serial.print(F("timer off "));
-					Serial.println(tmr->secs);
-				}
-				// off state, could be soft off
-				tmr->ms = 0;
+			if (debug > 2) {
+				log_time();
+				Serial.print(F("timer off "));
+				Serial.println(tmr->secs);
+			}
+			// off state, could be soft off
+			tmr->ms = 0;
 			/* not yet off, dimming or blinking? */
 			if (tmr->base_type == TYPE_DARK_SOFT) {
 				dimDown(tmr);
@@ -446,7 +447,7 @@ uint16_t SwitchHandler::srcData(uint8_t busNr, uint8_t adr1)
 			src.sa.press = 0;
 	}
 #ifdef DEBUG
-	if (debug > 0) {
+	if (debug > 1) {
 		Serial.print(src.sa.bus, HEX);
 		Serial.print(F("."));
 		Serial.print(src.sa.adr, HEX);
@@ -699,6 +700,22 @@ bool SwitchHandler::switchLevelStep(union pio dst, uint8_t level)
 	return ret;
 }
 
+bool SwitchHandler::initialStates()
+{
+	union pio p;
+
+	p.da.bus = 2;
+	p.da.adr = 7;
+	p.da.pio = 0;
+	p.da.type = getType(p);
+	wdt_reset();
+	switchLevelStep(p, 0);
+	p.da.bus = 3;
+	p.da.adr = 1;
+	wdt_reset();
+	switchLevelStep(p, 0);
+	return true;
+}
 
 /* Reads out PIO data and checks for dimmer, calls toggle or set
    functions for PIO or dimmer.
@@ -901,7 +918,6 @@ bool SwitchHandler::alarmHandler(uint8_t busNr)
 					Serial.write('0');
 				Serial.print(adr[i], HEX);
 			}
-			Serial.println();
 		}
 #endif
 		if ((mode & MODE_ALRAM_HANDLING) == 0) {
@@ -910,7 +926,7 @@ bool SwitchHandler::alarmHandler(uint8_t busNr)
 			return true;
 		}
 		if (adr[0] == 0x29) {
-			uint8_t res;
+			uint8_t res, to = 30;
 
 			res = _devs->ds2408RegRead(busNr, adr, data);
 			/* fill data for use in switchHandle */
@@ -919,12 +935,14 @@ bool SwitchHandler::alarmHandler(uint8_t busNr)
 				// cur_latch is reduced by each call to bitnumber
 				cur_latch = data[2];
 				if (debug > 0) {
-					Serial.print(cur_latch, HEX);
-					Serial.print(F(" "));
+					Serial.print(F(" = "));
+					Serial.println(cur_latch);
 				}
 				do {
+					wdt_reset();
 					switchHandle(busNr, adr[1]);
-				} while (cur_latch != 0);
+					to--;
+				} while (cur_latch != 0 && to > 0);
 			}
 		}
 		if (adr[0] == 0x28) {
