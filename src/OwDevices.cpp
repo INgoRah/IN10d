@@ -48,6 +48,11 @@ void OwDevices::begin(OneWireBase *ds)
 	ow = ds;
 	ow->resetDev();
 	ow->configureDev(DS2482_CONFIG_APU);
+	for (int i = 0; i < MAX_BUS; i++) {
+		// search devs
+		for (int j = 0; j < MAX_ADR; j++)
+			pio_data[i][j] = 0xff;
+	}
 }
 
 void OwDevices::adrGen(uint8_t bus, uint8_t adr[8], uint8_t id)
@@ -78,19 +83,27 @@ uint8_t OwDevices::ds2408LatchReset(uint8_t* addr)
 {
 	uint8_t retry;
 	uint8_t tmp;
+	bool res;
 
 #if defined(AVRSIM)
 	return 0xAA;
 #endif
 	retry = 5;
 	do {
-		ow->reset();
-		ow->select(addr);
-		ow->write (0xC3);
-		tmp = ow->read();
-		if (tmp == 0xAA)
-			break;
+		res = ow->reset();
+		if (res) {
+			ow->select(addr);
+			ow->write (0xC3);
+			tmp = ow->read();
+			if (tmp == 0xAA)
+				break;
+		} else {
+			delayMicroseconds(100);
+		}
 	} while (retry-- > 0);
+	if (retry == 0) {
+		Serial.println ("latch reset timeout!");
+	}
 
 	return tmp;
 }
@@ -104,9 +117,14 @@ uint8_t OwDevices::ds2408LatchReset(uint8_t* addr)
  * [5] Status
  * [6] Status ext 1, used for press time detection
  * [7] Status ext 2
+ *
+ * Returns 0xaa in case of successful read and latch reset
+ * Returns 0xff in case of latch reset issue
+ * Returns 0 in case of bus error or timeout -> to be repeated
  * */
 uint8_t OwDevices::ds2408RegRead(byte bus, uint8_t* addr, uint8_t* data, bool latch_reset)
 {
+	bool ret;
 	uint8_t tmp;
 	uint8_t buf[3];  // Put everything in the buffer so we can compute CRC easily.
 
@@ -117,8 +135,12 @@ uint8_t OwDevices::ds2408RegRead(byte bus, uint8_t* addr, uint8_t* data, bool la
 	uint8_t retry = REG_RETRY;
 	do {
 		/* read latch */
-		ow->selectChannel(bus);
-		ow->reset();
+		ret = ow->selectChannel(bus);
+		if (!ret)
+			return 0;
+		ret = ow->reset();
+		if (!ret)
+			return 0;
 		ow->select(addr);
 		// read data registers
 		buf[0] = 0xF0;    // Read PIO Registers
@@ -133,19 +155,28 @@ uint8_t OwDevices::ds2408RegRead(byte bus, uint8_t* addr, uint8_t* data, bool la
 			break;
 	} while (retry-- > 0);
 	if (data[5] == 0xff)
-		return 0xff;
+		return 0;
+	// TODO update cache here?
+	pio_data[bus][addr[1] & 0x0f] = data[1];
 	if (!latch_reset)
 		return 0xaa;
-
+	// clear the alarm status
 	tmp = ds2408LatchReset(addr);
+
 	if (tmp != 0xAA)
 		Serial.println(F("latch reset error"));
 
 	return tmp;
 }
 
+/* Send channel data - currently not used */
 uint8_t OwDevices::ds2408ChWrite(byte bus, uint8_t* addr, uint8_t* data, int cnt)
 {
+	(void)bus;
+	(void)addr;
+	(void)data;
+	(void)cnt;
+#if 0
 	uint8_t r;
 	int i;
 
@@ -161,7 +192,7 @@ uint8_t OwDevices::ds2408ChWrite(byte bus, uint8_t* addr, uint8_t* data, int cnt
 			Serial.print(r, HEX);
 		}
 	}
-
+#endif
 	return 0xaa;
 }
 
@@ -204,15 +235,19 @@ uint8_t OwDevices::ds2408PioGet(byte bus, uint8_t* addr)
 {
 	uint8_t res, d[10];
 
+	if (pio_data[bus][addr[1] & 0x0f] != 0)
+		return 	pio_data[bus][addr[1] & 0x0f];
+
 #if defined(AVRSIM)
-	return pio_data[addr[1] & 0x0f];
+	return pio_data[bus][addr[1] & 0x0f];
 #endif
 
 	res = ds2408RegRead(bus, addr, d, false);
 	if (res != 0xaa) {
-		Serial.print("Read error: ");
-		Serial.println(res, HEX);
-	}
+		//Serial.print("Read error: ");
+		//Serial.println(res, HEX);
+	} else
+		pio_data[bus][addr[1] & 0x0f] = d[1];
 
 	return d[1];
 #if 0
@@ -236,12 +271,15 @@ uint8_t OwDevices::ds2408PioGet(byte bus, uint8_t* addr)
 uint8_t OwDevices::ds2408PioSet(byte bus, uint8_t* addr, uint8_t pio)
 {
 #if defined(AVRSIM)
-	pio_data[addr[1] & 0x0f] = pio;
+	pio_data[bus][addr[1] & 0x0f] = pio;
 	return 0xAA;
 #else
 	uint8_t r, retry;
+	bool ret;
 
-	ow->selectChannel(bus);
+	ret = ow->selectChannel(bus);
+	if (!ret)
+		return 0xff;
 	retry = 5;
 	do {
 		wdt_reset();
@@ -260,8 +298,11 @@ uint8_t OwDevices::ds2408PioSet(byte bus, uint8_t* addr, uint8_t pio)
 		Serial.print(F("data "));
 		Serial.print(pio, HEX);
 		Serial.println(F(" write error"));
-	} else
-		ds2408LatchReset(addr);
+		return r;
+	}
+	ds2408LatchReset(addr);
+	// TODO update cache
+	pio_data[bus][addr[1] & 0x0f] = pio;
 
 	return r;
 #endif
@@ -303,11 +344,14 @@ void OwDevices::ds2408CfgWrite(byte bus, byte adr[8], uint8_t* d, uint8_t len)
  * 1: set alarms and reset
  * 2: read temperature and scratchpad
 */
-int16_t OwDevices::tempRead(byte busNr, byte addr[8], byte mode)
+int16_t OwDevices::tempRead(byte busNr, byte addr[8], byte mode, uint8_t* hum)
 {
 	uint8_t scratchPad[9];
+	bool ret;
 
-	ow->selectChannel(busNr);
+	ret = ow->selectChannel(busNr);
+	if (!ret)
+		return -1;
 	ow->reset();
 	ow->select(addr);
 	switch (mode) {
@@ -360,6 +404,8 @@ int16_t OwDevices::tempRead(byte busNr, byte addr[8], byte mode)
 	//// default is 12 bit resolution, 750 ms conversion time
 	// to be done by caller if needed
   	// celsius = (float)raw / 16.0;
+	if (hum != NULL)
+		*hum = scratchPad[5];
 
 	return raw;
 }

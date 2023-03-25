@@ -8,7 +8,7 @@
 #include <avr/pgmspace.h>
 #include <avr/wdt.h>
 
-#include "version.h"
+#include "main.h"
 
 #define wdr wdt_reset
 
@@ -49,6 +49,7 @@ A6 - Light sensor (analog)
 #define HOST_SLAVE_ADR 0x2f
 
 byte debug;
+static bool err = 0;
 
 /*
  * Objects
@@ -65,6 +66,7 @@ uint8_t hour;
 uint8_t sun;
 uint8_t light;
 byte light_sensor = 1;
+uint16_t pow_imp;
 
 #if !defined(AVRSIM)
 
@@ -72,7 +74,7 @@ WireWatchdog wdt0(A0);
 WireWatchdog wdt1(A1);
 WireWatchdog wdt2(A2);
 WireWatchdog wdt3(A3);
-WireWatchdog* wdt[MAX_BUS] = { &wdt0, &wdt1, &wdt2/*, &wdt3*/ };
+WireWatchdog* wdt[MAX_BUS] = { &wdt0, &wdt1, &wdt2, &wdt3 };
 
 #ifdef CLI_SUPPORT
 CmdCli cli;
@@ -94,6 +96,20 @@ static void ledBlink();
 unsigned long ledOnTime = 0;
 #endif
 int i2cRead();
+
+void log_time()
+{
+		Serial.print(hour);
+		Serial.print(F(":"));
+		if (min < 10)
+			Serial.print(F("0"));
+		Serial.print(min);
+		Serial.print(F(":"));
+		if (sec < 10)
+			Serial.print(F("0"));
+		Serial.print(sec);
+		Serial.print(F(" "));
+}
 
 /*
 * Function definitions
@@ -117,8 +133,8 @@ void setup() {
 
 	debug = 1;
 	light = 125;
-	Serial.print(F("One Wire Control "));
-	Serial.print(F(VERS_TAG));
+	Serial.print(F("IN10D "));
+	Serial.println(F(VERS_TAG));
 	digitalWrite(3, 1);
 	pinMode(3, OUTPUT);
 	pinMode(4, INPUT_PULLUP);
@@ -131,6 +147,8 @@ void setup() {
 	ow.begin(ds);
 	//Wire.setWireTimeout(250, true);
 	swHdl.begin(ds);
+	/* enable interupts on PB0 (= D8) */
+	PCMSK0 |= (_BV(PCINT0));
 	/* enable interrupts for the 1-wire monitor */
 	PCMSK1 |= (_BV(PCINT8) | _BV(PCINT9) | _BV(PCINT10) | _BV(PCINT11));
 	/* enable interupts on PD2, 4 and 7 (= D2, D4, D7) */
@@ -145,6 +163,59 @@ void setup() {
 	cli.begin(&ow);
 #endif
 	wdt_enable(WDTO_2S);
+	//WDTCSR |= _BV(WDIE);
+
+	//ApplicationMonitor.Dump(Serial);
+	//ApplicationMonitor.EnableWatchdog(Watchdog::CApplicationMonitor::Timeout_2s);
+
+	host.addEvent (SYS_START, 0, 9, 0);
+	// todo: update cache
+}
+
+#if 0
+ISR(WDT_vect, ISR_NAKED)
+{
+	uint8_t *upStack;
+	uint16_t uAddress = 0;
+
+	// Setup a pointer to the program counter. It goes in a register so we
+	// don't mess up the stack.
+	upStack = (uint8_t*)SP;
+	// The stack pointer on the AVR micro points to the next available location
+	// so we want to go back one location to get the first byte of the address
+	// pushed onto the stack when the interrupt was triggered. There will be
+	// PROGRAM_COUNTER_SIZE bytes there.
+	++upStack;
+	memcpy(&uAddress, upStack, 2);
+	Serial.print("SP=0x");
+	Serial.println(2 * uAddress, HEX);
+
+	Serial.print("SP-1=0x");
+	--upStack;
+	memcpy(&uAddress, upStack, 2);
+	Serial.println(2 * uAddress, HEX);
+
+	Serial.print("SP-2=0x");
+	--upStack;
+	memcpy(&uAddress, upStack, 2);
+	Serial.println(2 * uAddress, HEX);
+
+	Serial.flush();
+	wdt_enable(WDTO_120MS);
+	while (true)
+		;
+}
+#endif
+
+/* interupt on PORTB:
+ PB0 (= D8): Power Interval (500/1 KWh = 2 Wh) */
+ISR (PCINT0_vect)
+{
+	uint8_t pinb;
+
+	pinb = PINB;
+	if ((pinb & _BV(PB0)) == 0)
+		pinSignal |= 0x8;
 }
 
 /* interrupt handling for change on 1-wire */
@@ -178,8 +249,9 @@ ISR (PCINT2_vect) // handle pin change interrupt for A0 to A4 here
 	/* check for change to high */
 	if ((pind & _BV(PD2)) && (pind_old & _BV(PD2)) == 0)
 		pinSignal |= 1;
-	if ((pind & _BV(PD7)) && (pind_old & _BV(PD7)) == 0)
-		pinSignal |= 0x4;
+	//if ((pind & _BV(PD7)) && (pind_old & _BV(PD7)) == 0)
+	if ((pind & _BV(PD7)) == 0)
+		pinSignal |= 0x8;
 
 	/* report on change to low level */
 	if (((pind & _BV(PD4)) == 0) && (pind_old & _BV(PD4)))
@@ -188,9 +260,9 @@ ISR (PCINT2_vect) // handle pin change interrupt for A0 to A4 here
 	pind_old = pind;
 }
 
+#ifdef EXT_DEBUG
 static void ledBlink()
 {
-#ifdef EXT_DEBUG
 	if (millis() - ledOnTime > 300) {
 		if (ledOn) {
 			ledOnTime = millis();
@@ -201,19 +273,13 @@ static void ledBlink()
 			ledOnTime = millis();
 		}
 	}
-#endif
 }
+#endif
 
 void loop()
 {
 	static unsigned long sec_time = 0;
-#if 0
-	// was not working
-	if (Wire.getWireTimeoutFlag()) {
-		Wire.clearWireTimeoutFlag();
-		Serial.println(F("I2C timeout detected!"));
-	}
-#endif
+
 	host.loop();
 	if (millis() > (sec_time + 995)) {
 		sec_time = millis();
@@ -223,12 +289,12 @@ void loop()
 				uint16_t t;
 
 				ADCSRA = (1<<ADPS2) | (1<<ADPS1) | (1<<ADEN);
-				_delay_us (100);
+				_delay_us (150);
 				t = analogRead(A6);
 				ADCSRA = 0;
 				t = (t >> 2) & 0xFE;
 				if (light != t) {
-					light = t;
+					light = (4 * light + t) / 5;;
 					host.addEvent (TYPE_BRIGHTNESS, 0, 9, light);
 				}
 			}
@@ -251,8 +317,18 @@ void loop()
 			swHdl.switchHandle(0, 9, 1);
 		if (pinSignal & 0x2)
 			swHdl.switchHandle(0, 9, 0x2);
+#if 0
 		if (pinSignal & 0x4)
 			swHdl.switchHandle(0, 9, 0x8);
+#endif
+		if (pinSignal & 0x8) {
+			if (debug > 4) {
+				log_time();
+				Serial.println(F("Count"));
+			}
+			pow_imp++;
+			host.addEvent (POWER_IMP, 0, 9, pow_imp);
+		}
 		pinSignal = 0;
 	}
 	/* if there is any host data transfer, avoid conflicts on the I2C bus
@@ -263,20 +339,40 @@ void loop()
 	swHdl.loop();
 	if (alarmSignal) {
 		alarmPolling = millis();
-		host.setAlarm();
+		//host.setAlarm();
+		/* the alarmhandler will set the alarm signal to the host
+		   after the event data is prepared. Otherwise a host could
+		   disturb our switching process */
 		if (swHdl.mode & MODE_ALRAM_HANDLING) {
 			byte retry;
 			for (byte i = 0; i < MAX_BUS; i++) {
 				if (wdt[i]->alarm) {
-					retry = 5;
+					retry = 10;
 					while (!swHdl.alarmHandler(i)) {
 						if (retry-- == 0)
 							break;
+						delay (2);
 					}
-					wdt[i]->alarm = false;
+					if (retry > 0) {
+						wdt[i]->alarm = false;
+						if (err) {
+							log_time();
+							Serial.println(F("Error recoverd"));
+							err = false;
+						}
+					}
+					else {
+						// lets retry next loop
+						err = true;
+						wdr();
+						log_time();
+						Serial.println(F("alarm retry exceeded!"));
+						return;
+					}
 				}
 			}
-		}
+		} else
+			host.setAlarm();
 		alarmSignal--;
 		// ds->reset();
 	}

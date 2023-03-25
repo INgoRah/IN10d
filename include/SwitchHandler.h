@@ -2,7 +2,6 @@
 #include "OwDevices.h"
 
 /* config */
-#define MAX_BUS 3
 #ifdef AVRSIM
 #define MAX_TIMER 2
 #define MAX_SWITCHES 4
@@ -76,16 +75,18 @@ struct _sw_tbl {
 enum tim_type {
 	/** Timer always, hard off per time */
 	TYPE_DEF,
-	TYPE_30S		/* 1 */,
-	TYPE_1MIN		/* 2 */,
-	TYPE_2MIN		/* 3 */,
-	TYPE_5MIN		/* 4 */,
-	TYPE_10MIN		/* 5 */,
-	TYPE_15MIN		/* 6 */,
-	TYPE_30MIN		/* 7 */,
-	TYPE_1H 		/* 8 */,
+	TYPE_20S		/* 1 */,
+	TYPE_30S		/* 2 */,
+	TYPE_1MIN		/* 3 */,
+	TYPE_2MIN		/* 4 */,
+	TYPE_5MIN		/* 5 */,
+	TYPE_10MIN		/* 6 */,
+	TYPE_15MIN		/* 7 */,
+	TYPE_30MIN		/* 8 */,
+	TYPE_1H 		/* 9 */,
 	/** Timer on darkness with hard off per time */
 	TYPE_DARK = 10,
+	TYPE_DARK_20S	/* 11 */,
 	TYPE_DARK_30S	/* 11 */,
 	TYPE_DARK_1MIN	/* 12 */,
 	TYPE_DARK_2MIN	/* 13 */,
@@ -97,6 +98,7 @@ enum tim_type {
 	/** Timer on darkness with soft off per time
 	 *  if supported (dimmable), time 5 secs */
 	TYPE_DARK_SOFT = 20,
+	TYPE_DARK_SOFT_20S		/* 21 */,
 	TYPE_DARK_SOFT_30S		/* 21 */,
 	TYPE_DARK_SOFT_1MIN		/* 22 */,
 	TYPE_DARK_SOFT_2MIN		/* 23 */,
@@ -156,9 +158,12 @@ class SwitchHandler
 		uint8_t getType(union pio dst);
 		uint8_t bitnumber();
 		bool timerUpdate(union d_adr_8 dst, uint8_t typ);
-		uint8_t dimDown(struct _timer_item* tmr, uint8_t hsec);
+		uint8_t dimDown(struct _timer_item* tmr);
 		uint8_t dimLevel(union pio dst, uint8_t* id);
 		uint8_t dimLevel(union d_adr_8 dst, uint8_t* id);
+		bool switchLevelStep(union pio dst, uint8_t level);
+		bool setPio(union pio dst, uint8_t adr[8], uint8_t d, enum _pio_mode state);
+		bool setLevel(union pio dst, uint8_t adr[8], uint8_t* d, uint8_t id, uint8_t level);
 	public:
 		uint8_t mode;
 		uint8_t light_thr;
@@ -175,7 +180,4 @@ class SwitchHandler
 		bool switchHandle(uint8_t busNr, uint8_t adr1);
 		bool switchHandle(uint8_t busNr, uint8_t adr1, uint8_t latch);
 		bool switchLevel(union pio dst, uint8_t level);
-		bool switchLevelStep(union pio dst, uint8_t level);
-		bool setPio(union pio dst, uint8_t adr[8], uint8_t d, enum _pio_mode state);
-		bool setLevel(union pio dst, uint8_t adr[8], uint8_t id, uint8_t d, uint8_t level);
 };

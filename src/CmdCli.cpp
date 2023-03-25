@@ -118,18 +118,17 @@ void CmdCli::begin(OwDevices* devs)
 	cmdCallback.addCmd("p", &funcPio);		// 4
 	cmdCallback.addCmd("bus", &funcBus); 	// 5
 	cmdCallback.addCmd("cfg", &funcCfg);	// 6
-	cmdCallback.addCmd("c", &funcCmd);		// 7
-	cmdCallback.addCmd("sw", &funcSwCmd);	// 8
-	cmdCallback.addCmd("t", &funcTemp);		// 9
-#ifdef CHGID_CMD
-	cmdCallback.addCmd("id", &funcChgId);		// 10
-#endif
-
+	cmdCallback.addCmd("sw", &funcSwCmd);	// 7
+	cmdCallback.addCmd("t", &funcTemp);		// 8
 	//cmdCallback.addCmd("time", &funcTime);
+	//cmdCallback.addCmd("c", &funcCmd);		// 9
 #ifdef EXT_DEBUG
-	cmdCallback.addCmd("pset", &funcPinSet);
-	cmdCallback.addCmd("pget", &funcPinGet);
-	cmdCallback.addCmd("log", &funcLog);
+	cmdCallback.addCmd("pset", &funcPinSet); // 9
+	cmdCallback.addCmd("pget", &funcPinGet); // 10
+	cmdCallback.addCmd("log", &funcLog); // 11
+#endif
+#ifdef CHGID_CMD
+	cmdCallback.addCmd("id", &funcChgId);		// 9 or 12
 #endif
 	// reserve bytes for the inputString
 	inputString.reserve(MAX_CMD_BUFSIZE);
@@ -247,7 +246,8 @@ void CmdCli::funcPio(CmdParser *myParser)
 	union pio dst;
 
 	if (myParser->getParamCount() != 4 && myParser->getParamCount() != 1) {
-		Serial.println(F("(bus adr pio) level !"));
+		Serial.print(myParser->getParamCount());
+		Serial.println(F(", need (bus adr pio) level !"));
 		return;
 	}
 	if (myParser->getParamCount() == 4) {
@@ -270,22 +270,8 @@ void CmdCli::funcTemp(CmdParser *myParser)
 {
 	byte adr[8];
 	uint16_t temp;
-#if 0
-	if (myParser->getParamCount() == 0) {
-		uint8_t adrt[8] = { 0x28, 0x65, 0x0E, 0xFD, 0x05, 0x00, 0x00, 0x4D };
-		float temp;
-		byte bus;
+	uint8_t hum;
 
-		bus = 0;
-		ow->tempRead (bus, adrt, 0);
-		delay(200);
-		temp = ow->tempRead (bus, adrt, 1);
-		Serial.print(temp / 16);
-		Serial.println(F(" C"));
-
-		return;
-	}
-#endif
 	if (myParser->getParamCount() == 2) {
 		curBus = atoi(myParser->getCmdParam(1));
 		curAdr = atoi(myParser->getCmdParam(2));
@@ -294,7 +280,7 @@ void CmdCli::funcTemp(CmdParser *myParser)
 	if (adr[1] > 10) {
 		uint8_t adrt[8] = { 0x28, 0x65, 0x0E, 0xFD, 0x05, 0x00, 0x00, 0x4D };
 
-		ow->tempRead (curBus, adrt, 0);
+		ow->tempRead (curBus, adrt);
 		delay(800);
 		temp = ow->tempRead (curBus, adrt, 1);
 		Serial.print((float)(temp / 16));
@@ -315,16 +301,18 @@ void CmdCli::funcTemp(CmdParser *myParser)
 		Serial.println(adr[i], HEX);
 	}
 #endif
-	ow->tempRead (curBus, adr, 0);
+	ow->tempRead (curBus, adr);
 	delay(100);
-	temp = ow->tempRead (curBus, adr, 1);
+	temp = ow->tempRead (curBus, adr, 1, &hum);
 	float f = temp / 16.0;
 	Serial.print(f);
-	Serial.println(F(" C"));
-	Serial.print(F(" Raw = 0x"));
-	Serial.print(temp, HEX);
-	Serial.print(F(" / "));
-	Serial.println(temp);
+	Serial.print(F(" C"));
+	if (hum != 0xff) {
+		Serial.print(F(" / "));
+		Serial.print(hum);
+		Serial.print(F(" %"));
+	}
+	Serial.println();
 }
 
 void CmdCli::funcMode(CmdParser *myParser)
@@ -410,7 +398,7 @@ void CmdCli::funcCfg(CmdParser *myParser)
 }
 
 /*
-
+Send different amount of data - not actively used
 Examples:
 c 7 1 f8 1f ff ff WOHNEN
 c 7 2 00 00 f8 00 18.6
@@ -433,6 +421,7 @@ c 7 a 84 10 00 00 11:42
 
 c 7 8 07 ff 00 00 STURM
 */
+#if 0
 void CmdCli::funcCmd(CmdParser *myParser)
 {
 	byte d;
@@ -485,6 +474,7 @@ void CmdCli::funcCmd(CmdParser *myParser)
 	}
 	Serial.println();
 }
+#endif
 
 void CmdCli::dumpSwTbl(void)
 {
@@ -898,8 +888,12 @@ void serialEvent() {
 		// if the incoming character is a newline, set a flag so the
 		// main loop can do something about it:
 		if (inChar == 0x0d) {
-			stringComplete = true;
 			Serial.println();
+			if (inputString.length() == 0) {
+				Serial.println(F("\now:# "));
+				return;
+			}
+			stringComplete = true;
 			return;
 		}
 		if (inChar == 0x08 ||
