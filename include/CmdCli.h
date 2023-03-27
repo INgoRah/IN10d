@@ -5,16 +5,12 @@
 #include <CmdParser.hpp>
 #include "OwDevices.h"
 
-#define CLI_NR_BASE 9
+#define CLI_NR_BASE 10
 #ifdef EXT_DEBUG
-#define CLI_NR CLI_NR_BASE + 3
+#define CLI_NR CLI_NR_BASE + 2
 #else
 #define CLI_NR CLI_NR_BASE
 #endif
-
-extern void printDst8(union d_adr_8 dst);
-extern void printDst(union pio dst);
-extern void printSrc(union s_adr src);
 
 class CmdCli
 {
@@ -36,14 +32,14 @@ class CmdCli
 		static void funcCmd(CmdParser *myParser); /* 7 */
 		static void funcSwCmd(CmdParser *myParser);
 		static void funcTemp(CmdParser *myParser); /* 9 */
+		static void funcLog(CmdParser *myParser); /* 10 */
 #ifdef CHGID_CMD
-		static void funcChgId(CmdParser *myParser); /* 10 */
+		static void funcChgId(CmdParser *myParser); /* 11 */
 #endif
 		//static void funcTime(CmdParser *myParser);
 #ifdef EXT_DEBUG
 		static void funcPinSet(CmdParser *myParser);
 		static void funcPinGet(CmdParser *myParser);
-		static void funcLog(CmdParser *myParser);
 #endif
 
 public:

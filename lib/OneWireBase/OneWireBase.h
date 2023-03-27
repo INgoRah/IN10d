@@ -23,6 +23,7 @@ class OneWireBase
 		uint8_t searchExhausted;
 
 	public:
+		uint8_t last_err;
 		uint8_t status;
 		uint8_t mAddress;
 		uint8_t searchLastDisrepancy;

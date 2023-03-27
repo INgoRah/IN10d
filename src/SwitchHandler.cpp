@@ -216,7 +216,7 @@ bool SwitchHandler::timerUpdate(union d_adr_8 dst, uint8_t typ)
 
 		if (tmr->secs == 0 || tmr->dst.data == dst.data) {
 #ifdef EXT_DEBUG
-			if (debug > 1) {
+			if (debug > 2) {
 				if (tmr->secs)
 					Serial.print(F("update timer "));
 				else {
@@ -233,7 +233,7 @@ bool SwitchHandler::timerUpdate(union d_adr_8 dst, uint8_t typ)
 			tmr->dst.data = dst.data;
 			tmr->ms = millis();
 #ifdef EXT_DEBUG
-			if (debug > 1) {
+			if (debug > 2) {
 				printDst8(dst);
 				Serial.println();
 			}
@@ -263,6 +263,7 @@ void SwitchHandler::status()
 	}
 }
 
+/* Would be nice to suppress the logs here */
 uint8_t SwitchHandler::dimDown(struct _timer_item* tmr)
 {
 	union pio p;
@@ -283,7 +284,7 @@ uint8_t SwitchHandler::dimDown(struct _timer_item* tmr)
 	else {
 		uint8_t adr[8];
 
-		p.da.type = 0;
+		p.da.type = TYPE_DS29X;
 		d = dataRead(p, adr);
 		setLevel(p, adr, &d, tmr->id, level);
 	}
@@ -313,6 +314,7 @@ void SwitchHandler::loop()
 	for (i = 0; i < MAX_TIMER; i++) {
 		struct _timer_item* tmr = &tmr_list[i];
 
+		wdt_reset();
 		if (tmr->ms == 0) {
 			if (tmr->secs == 0)
 				/* nothing to do */
@@ -323,13 +325,13 @@ void SwitchHandler::loop()
 		}
 		/* this is the off state handling, timer expired */
 		if (millis() > tmr->ms + (tmr->secs * 1000)) {
-				if (debug > 2) {
-					log_time();
-					Serial.print(F("timer off "));
-					Serial.println(tmr->secs);
-				}
-				// off state, could be soft off
-				tmr->ms = 0;
+			if (debug > 2) {
+				log_time();
+				Serial.print(F("timer off "));
+				Serial.println(tmr->secs);
+			}
+			// off state, could be soft off
+			tmr->ms = 0;
 			/* not yet off, dimming or blinking? */
 			if (tmr->base_type == TYPE_DARK_SOFT) {
 				dimDown(tmr);
@@ -445,7 +447,7 @@ uint16_t SwitchHandler::srcData(uint8_t busNr, uint8_t adr1)
 			src.sa.press = 0;
 	}
 #ifdef DEBUG
-	if (debug > 0) {
+	if (debug > 1) {
 		Serial.print(src.sa.bus, HEX);
 		Serial.print(F("."));
 		Serial.print(src.sa.adr, HEX);
@@ -518,16 +520,14 @@ uint8_t SwitchHandler::dataRead(union pio dst, uint8_t adr[8])
  */
 bool SwitchHandler::setLevel(union pio dst, uint8_t adr[8], uint8_t* d, uint8_t id, uint8_t level)
 {
+	if (debug > 1) {
+		printDst(dst);
+		Serial.print(F(" = "));
+		Serial.print(*d, HEX);
+	}
 	switch (dst.da.type) {
-	case 0:
+	case TYPE_DS29X:
 	default:
-#ifdef EXT_DEBUG
-		if (debug > 1) {
-			printDst(dst);
-			Serial.print(F(" = "));
-			Serial.print(*d, HEX);
-		}
-#endif
 		// clear level in data
 		*d &= 0x3;
 		if (level > 0)
@@ -535,24 +535,23 @@ bool SwitchHandler::setLevel(union pio dst, uint8_t adr[8], uint8_t* d, uint8_t 
 			*d |= (level << 2);
 		if (_devs->ds2408PioSet(dst.da.bus, adr, *d) != 0xAA)
 			return false;
-#ifdef EXT_DEBUG
-		if (debug > 1) {
-			Serial.print(" -> ");
-			Serial.println(*d, HEX);
-		}
-#endif
 		break;
-	case 2:
+	case TYPE_INTERN:
 		if (dst.da.bus == 0 && dst.da.adr == 9) {
 			if (dst.da.pio == 0) {
 				// scale up 0..15 to 0..255
-				if (level > 62)
+				if (level > 62) {
 					digitalWrite(5, HIGH);
-				else
+					*d = HIGH;
+				} else
 					analogWrite(5, level * 4);
 			}
 		}
 		break;
+	}
+	if (debug > 1) {
+		Serial.print(F(" -> "));
+		Serial.println(*d, HEX);
 	}
 	dim_tbl[id].level = level;
 
@@ -580,7 +579,7 @@ bool SwitchHandler::setPio(union pio dst, uint8_t adr[8], uint8_t d, enum _pio_m
 	if (debug > 2)
 		printDst(dst);
 #endif
-	if (dst.da.type == 2) {
+	if (dst.da.type == TYPE_INTERN) {
 		/* special case: our own pin, is a dimmer, no need to handle here */
 		// PIO0: PWM on pin 5
 		// D3 - Relais ouput, negative polarity - active switching GND
@@ -616,14 +615,16 @@ bool SwitchHandler::setPio(union pio dst, uint8_t adr[8], uint8_t d, enum _pio_m
 	switch (state) {
 		case ON:
 			/* timer mode or force */
-			if ((d & pio) == 0)
+			if ((d & pio) == 0) {
 				return false;
+			}
 			d &= ~(pio);
 			break;
 		case OFF:
 			/* already off */
-			if (d & pio)
+			if (d & pio) {
 				return false;
+			}
 			d |= pio;
 			break;
 		case TOGGLE:
@@ -636,8 +637,8 @@ bool SwitchHandler::setPio(union pio dst, uint8_t adr[8], uint8_t d, enum _pio_m
 				d |= pio;
 			break;
 	}
-#ifdef EXT_DEBUG
-	if (debug > 2) {
+	if (debug > 1) {
+		printDst(dst);
 		if (d & pio)
 			Serial.print(F(" OFF"));
 		else
@@ -645,11 +646,10 @@ bool SwitchHandler::setPio(union pio dst, uint8_t adr[8], uint8_t d, enum _pio_m
 		Serial.print(F(" -> "));
 		Serial.println(d, HEX);
 	}
-#endif
 
 	r = _devs->ds2408PioSet(dst.da.bus, adr, d);
-	if (r == 0xAA)
-		host.addEvent (dst, d);
+
+	// read back for cross check in upper layer
 	return (r == 0xAA);
 }
 
@@ -676,29 +676,46 @@ bool SwitchHandler::switchLevelStep(union pio dst, uint8_t level)
 	bool ret = false;
 
 	dst.da.type = getType(dst);
-	if (dst.da.type != 2)
-		d = dataRead(dst, adr);
+	if (dst.da.type != 2) {
+		_devs->adrGen(dst.da.bus, adr, dst.da.adr);
+		d = _devs->ds2408PioGet(dst.da.bus, adr);
+	}
 	dimLevel(dst, &id);
 	if (id != 0xff) {
 		ret = setLevel(dst, adr, &d, id, level);
-		if (ret) {
-			if (dst.da.type != 2)
-				d = dataRead(dst, adr);
-			else
-				d = level;
-			host.addEvent (dst, d);
-		}
-	}
-	else {
+	} else {
+		// 	addEvent is done in setPio
 		if (level < 32)
-			return setPio (dst, adr, d, OFF);
+			ret = setPio (dst, adr, d, OFF);
 		else
-			return setPio (dst, adr, d, ON);
+			ret = setPio (dst, adr, d, ON);
 	}
+	if (dst.da.type != 2)
+		// forced read back for cross check
+		d = _devs->ds2408PioGet(dst.da.bus, adr, true);
+	else
+		d = level;
+	host.addEvent (dst, d);
 
 	return ret;
 }
 
+bool SwitchHandler::initialStates()
+{
+	union pio p;
+
+	p.da.bus = 2;
+	p.da.adr = 7;
+	p.da.pio = 0;
+	p.da.type = getType(p);
+	wdt_reset();
+	switchLevelStep(p, 0);
+	p.da.bus = 3;
+	p.da.adr = 1;
+	wdt_reset();
+	switchLevelStep(p, 0);
+	return true;
+}
 
 /* Reads out PIO data and checks for dimmer, calls toggle or set
    functions for PIO or dimmer.
@@ -723,7 +740,8 @@ bool SwitchHandler::actorHandle(union d_adr_8 dst, enum _pio_mode state)
 
 	if (id == 0xff) {
 		// simply pass the state
-		return setPio (p, adr, d, state);
+		ret = setPio (p, adr, d, state);
+		goto actor_out;
 	}
 	// this is a dimmer
 	switch (state) {
@@ -756,9 +774,11 @@ bool SwitchHandler::actorHandle(union d_adr_8 dst, enum _pio_mode state)
 			ret = setLevel(p, adr, &d, id, 0);
 	}
 
-	if (ret)
+actor_out:
+	if (ret) {
+		d = _devs->ds2408PioGet(p.da.bus, adr);
 		host.addEvent (dst, (uint16_t)d);
-
+	}
 	return ret;
 }
 
@@ -790,7 +810,8 @@ bool SwitchHandler::switchHandle(uint8_t busNr, uint8_t adr1)
 				  p->dst.data == 0xFF))  {
 				/* get the type and check for light if needed */
 				if (light < light_thr && p->type > TYPE_DARK) {
-					if (debug > 1) {
+#ifdef EXT_DEBUG
+					if (debug > 3) {
 						Serial.print(F("not dark "));
 						Serial.print(light);
 						Serial.print(F(" < "));
@@ -798,10 +819,11 @@ bool SwitchHandler::switchHandle(uint8_t busNr, uint8_t adr1)
 						Serial.print(F(", TYP "));
 						Serial.println(p->type);
 					}
+#endif
 					continue;
 				}
 #ifdef EXT_DEBUG
-				if (debug > 1) {
+				if (debug > 2) {
 					Serial.print(F("timer #"));
 					Serial.print(i);
 					Serial.print(F(" -> "));
@@ -833,8 +855,8 @@ bool SwitchHandler::switchHandle(uint8_t busNr, uint8_t adr1)
 	 */
 	for (i = 0; i < MAX_SWITCHES; i++) {
 		if (src.data == sw_tbl[i].src.data) {
-#ifdef EXT_DEBUG
-			if (debug > 1) {
+#ifdef DEBUG
+			if (debug > 2) {
 				Serial.print(F("switch #"));
 				Serial.print(i);
 				Serial.print(" ");
@@ -887,7 +909,7 @@ bool SwitchHandler::alarmHandler(uint8_t busNr)
 	while (ds->search(adr, false)) {
 		j++;
 #ifdef DEBUG
-		if (debug > 0) {
+		if (debug > 0 && adr[0] != 0x28) {
 			log_time();
 			Serial.print(busNr);
 			Serial.print(F("@"));
@@ -896,7 +918,6 @@ bool SwitchHandler::alarmHandler(uint8_t busNr)
 					Serial.write('0');
 				Serial.print(adr[i], HEX);
 			}
-			Serial.print(F(" "));
 		}
 #endif
 		if ((mode & MODE_ALRAM_HANDLING) == 0) {
@@ -905,21 +926,23 @@ bool SwitchHandler::alarmHandler(uint8_t busNr)
 			return true;
 		}
 		if (adr[0] == 0x29) {
-			uint8_t ret;
+			uint8_t res, to = 30;
 
-			ret = _devs->ds2408RegRead(busNr, adr, data);
+			res = _devs->ds2408RegRead(busNr, adr, data);
 			/* fill data for use in switchHandle */
-			if (ret == 0xaa || ret == 0xff) {
+			if (res == 0xaa || res == 0xff) {
 				// loop over all set bits
 				// cur_latch is reduced by each call to bitnumber
 				cur_latch = data[2];
 				if (debug > 0) {
-					Serial.print(cur_latch, HEX);
-					Serial.print(F(" "));
+					Serial.print(F(" = "));
+					Serial.println(cur_latch);
 				}
 				do {
+					wdt_reset();
 					switchHandle(busNr, adr[1]);
-				} while (cur_latch != 0);
+					to--;
+				} while (cur_latch != 0 && to > 0);
 			}
 		}
 		if (adr[0] == 0x28) {
@@ -931,7 +954,7 @@ bool SwitchHandler::alarmHandler(uint8_t busNr)
 				if (hum != 0xff)
 					host.addEvent (HUMIDITY_CHANGE, busNr, adr[1], hum);
 #ifdef DEBUG
-				if (debug > 1) {
+				if (debug > 2) {
 					Serial.print(busNr);
 					Serial.print(F("."));
 					Serial.print(adr[1]);
@@ -941,10 +964,11 @@ bool SwitchHandler::alarmHandler(uint8_t busNr)
 				}
 #endif
 		}
-
-		if (cnt-- == 0) {
-			Serial.println(F("Error searching"));
-			break;
+		cnt--;
+		if (ds->last_err || cnt == 0) {
+			log_time();
+			Serial.print(F("Error searching = "));
+			Serial.println(ds->last_err);
 		}
 		wdt_reset();
 	}

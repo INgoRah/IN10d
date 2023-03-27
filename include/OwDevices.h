@@ -6,7 +6,9 @@
 
 #define MAX_CFG_SIZE 26
 /** Retries for register read */
-#define REG_RETRY 3;
+#define REG_RETRY 20
+#define PIOSET_RETRY 20
+#define LATCH_RESET_RETRY 20
 /** Retries for activity latch reset */
 #define ACTRES_RETRY 5;
 
@@ -19,13 +21,14 @@ class OwDevices
 	public:
 		OwDevices() {;}
 		void begin(OneWireBase *ds);
+		void cacheInit();
 
 		void adrGen(byte bus, byte adr[8], uint8_t id);
 		uint8_t ds2408LatchReset(uint8_t* addr);
 		uint8_t ds2408RegRead(byte bus, uint8_t* addr, uint8_t* data, bool latch_reset = true);
 		uint8_t ds2408ChWrite(byte bus, uint8_t* addr, uint8_t* data, int cnt);
 		void toggleDs2413(byte bus, uint8_t* addr);
-		uint8_t ds2408PioGet(byte bus, uint8_t* addr);
+		uint8_t ds2408PioGet(byte bus, uint8_t* addr, uint8_t force = 0);
 		uint8_t ds2408PioSet(byte bus, uint8_t* addr, uint8_t pio);
 		uint8_t ds2408TogglePio(byte bus, uint8_t* addr, uint8_t pio, uint8_t* data = NULL);
 		void ds2408CfgWrite(byte bus, byte adr[8], uint8_t* d, uint8_t len);

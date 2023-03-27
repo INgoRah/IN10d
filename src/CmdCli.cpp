@@ -28,6 +28,9 @@ extern OneWireBase *ds;
 extern WireWatchdog* wdt[MAX_BUS];
 extern SwitchHandler swHdl;
 extern void hostCommand(uint8_t cmd, uint8_t data);
+extern uint8_t sec;
+extern uint8_t min;
+extern uint8_t hour;
 
 CmdCli* me;
 
@@ -43,6 +46,9 @@ static String inputString = "";         // a String to hold incoming data
 static OwDevices* ow;
 static byte curBus, curAdr, curPio;
 
+/*
+ * Global functions
+ */
 void printDst(union pio dst)
 {
 	Serial.print(dst.da.bus, HEX);
@@ -69,6 +75,20 @@ void printSrc(union s_adr src)
 	Serial.print(src.sa.adr);
 	Serial.print(F("."));
 	Serial.print(src.sa.press * 10 + src.sa.latch);
+}
+
+void log_time()
+{
+	Serial.print(hour);
+	Serial.print(F(":"));
+	if (min < 10)
+		Serial.print(F("0"));
+	Serial.print(min);
+	Serial.print(F(":"));
+	if (sec < 10)
+		Serial.print(F("0"));
+	Serial.print(sec);
+	Serial.print(F(" "));
 }
 
 /* Based on code found in https://forum.arduino.cc/index.php?topic=90.0 */
@@ -120,12 +140,12 @@ void CmdCli::begin(OwDevices* devs)
 	cmdCallback.addCmd("cfg", &funcCfg);	// 6
 	cmdCallback.addCmd("sw", &funcSwCmd);	// 7
 	cmdCallback.addCmd("t", &funcTemp);		// 8
+	cmdCallback.addCmd("log", &funcLog);	// 9
 	//cmdCallback.addCmd("time", &funcTime);
-	//cmdCallback.addCmd("c", &funcCmd);		// 9
+	//cmdCallback.addCmd("c", &funcCmd);		// 10
 #ifdef EXT_DEBUG
-	cmdCallback.addCmd("pset", &funcPinSet); // 9
-	cmdCallback.addCmd("pget", &funcPinGet); // 10
-	cmdCallback.addCmd("log", &funcLog); // 11
+	cmdCallback.addCmd("pset", &funcPinSet); // 10
+	cmdCallback.addCmd("pget", &funcPinGet); // 11
 #endif
 #ifdef CHGID_CMD
 	cmdCallback.addCmd("id", &funcChgId);		// 9 or 12
@@ -222,7 +242,7 @@ void CmdCli::funcStatus(CmdParser *myParser)
 			res = false;
 	}
 	ow->adrGen(curBus, adr, curAdr);
-#if EXT_DEBUG
+#ifdef EXT_DEBUG
 	if (debug) {
 		for (i = 0; i < 7; i++) {
 			Serial.print(adr[i], HEX);
@@ -245,6 +265,10 @@ void CmdCli::funcPio(CmdParser *myParser)
 	uint8_t level;
 	union pio dst;
 
+	if (myParser->getParamCount() == 0) {
+		ow->cacheInit();
+		return;
+	}
 	if (myParser->getParamCount() != 4 && myParser->getParamCount() != 1) {
 		Serial.print(myParser->getParamCount());
 		Serial.println(F(", need (bus adr pio) level !"));
@@ -291,7 +315,7 @@ void CmdCli::funcTemp(CmdParser *myParser)
 	adr[0] = 0x28;
 	adr[1] = curAdr;
 	ow->adrGen(curBus, adr, adr[1]);
-#if EXT_DEBUG
+#ifdef EXT_DEBUG
 	if (debug) {
 		int i;
 		for (i = 0; i < 7; i++) {
@@ -751,6 +775,7 @@ void CmdCli::funcPinGet(CmdParser *myParser)
 	Serial.print(F(" val: "));
 	Serial.print(val);
 }
+#endif
 
 #include "TwiHost.h"
 extern TwiHost host;
@@ -789,7 +814,6 @@ void CmdCli::funcLog(CmdParser *myParser)
 	}
 	swHdl.status();
 }
-#endif
 
 #ifdef CHGID_CMD
 void CmdCli::funcChgId(CmdParser *myParser)
@@ -890,7 +914,8 @@ void serialEvent() {
 		if (inChar == 0x0d) {
 			Serial.println();
 			if (inputString.length() == 0) {
-				Serial.println(F("\now:# "));
+				Serial.print(F("\now:# "));
+				Serial.flush();
 				return;
 			}
 			stringComplete = true;

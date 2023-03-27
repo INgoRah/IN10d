@@ -40,6 +40,13 @@ union s_adr {
 	} sa;
 };
 
+/* custom DS2408 FW with defined address 29 <bus> <adr> ... */
+#define TYPE_DS29X 0
+/* not used, reserved for standard slaves with ROM address */
+#define TYPE_STD1W 1
+/* not 1W connected PIOs of own controller */
+#define TYPE_INTERN 2
+
 // todo: add force on? or based on src like PIR?
 /* optimized 8 bit PIO destination with only 8 bit for size optimized
 switch table. */
@@ -180,4 +187,5 @@ class SwitchHandler
 		bool switchHandle(uint8_t busNr, uint8_t adr1);
 		bool switchHandle(uint8_t busNr, uint8_t adr1, uint8_t latch);
 		bool switchLevel(union pio dst, uint8_t level);
+		bool initialStates();
 };
