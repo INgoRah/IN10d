@@ -343,10 +343,12 @@ void alarm_loop()
 				} else {
 					if (ds->last_err) {
 						// lets retry next loop
+#ifdef DEBUG
 						log_time();
 						Serial.print(i);
 						Serial.print(F(": alarm retry exceeded "));
 						Serial.println(ds->last_err);
+#endif
 						wdr();
 						return;
 					}
