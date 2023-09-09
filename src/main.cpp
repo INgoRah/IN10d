@@ -27,16 +27,35 @@
 #include "SwitchHandler.h"
 
 /*
-Used pins:
+Used pins
+(D0 .. D7 = PD0 .. PD7,
+ D8 .. D13 = PB0 .. PB5,
+ A0 .. A5 = PC0 .. PC5):
 D2 - Internal PIR, maps to 0.9.1
 D3 - Relais ouput, negative polarity - active switching GND, maps to 0.9.3
 D4 - Misc Alarm PIN, maps to 0.9.2
 D5 - PWM output (dimed LED) via open coollector transistor, maps to 0.9.0
 D6 - used for alarm signal to host (class TwiHost)
 D7 - External PIR, maps to 0.9.4
+D8 (PB0) - Power Interval
+D9 -
+bD10 -
+D11 -
+D12 -
 D13 - built in LED
 A0..A4 - 1-wire monitor
-A6 - Light sensor (analog)
+A6 (ADC6) - Light sensor (analog)
+*/
+/*
+Virtual adress mapping
+0.9.0 - output PWM on D5
+0.9.1 - output D9
+0.9.2 - input Misc Alarm PIN / output D10
+0.9.3 - output D3
+0.9.4 - ignored
+0.9.5 - ignored
+0.9.6 - D11
+0.9.7 - D12
 */
 
 /*
@@ -122,8 +141,13 @@ void setup() {
 	Serial.print(F(VERS_TAG));
 	digitalWrite(3, 1);
 	pinMode(3, OUTPUT);
-	pinMode(4, INPUT_PULLUP);
-	pinMode(7, INPUT);
+	//pinMode(4, INPUT_PULLUP);
+	//pinMode(7, INPUT);
+	pinMode(9, OUTPUT);
+	pinMode(10, OUTPUT);
+	pinMode(11, OUTPUT);
+	pinMode(12, OUTPUT);
+
 	delay (10);
 	// host.onCommand(hostCommand);
 	host.begin (HOST_SLAVE_ADR);
@@ -138,7 +162,7 @@ void setup() {
 	/* enable interrupts for the 1-wire monitor */
 	PCMSK1 |= (_BV(PCINT8) | _BV(PCINT9) | _BV(PCINT10) | _BV(PCINT11));
 	/* enable interupts on PD2, 4 and 7 (= D2, D4, D7) */
-	PCMSK2 |= (_BV(PCINT18) | _BV(PCINT20) | _BV(PCINT23));
+	PCMSK2 |= (_BV(PCINT18) /*| _BV(PCINT20) | _BV(PCINT23)*/);
 	PCIFR |= _BV(PCIF1) | _BV(PCIF2); // clear any outstanding interrupt
 	PCICR |= _BV(PCIE1) | _BV(PCIE2); // enable interrupt for the group
 
@@ -267,12 +291,31 @@ static void ledBlink()
 }
 #endif
 
+const int SENSOR_MAX_RANGE = 500; // in cm
+unsigned long duration;
+unsigned int distance;
+
 void light_loop()
 {
 	static unsigned long sec_time = 0;
 
 	if ((millis() - sec_time) < 1000)
 		return;
+
+#ifdef TEST_DISTANCE
+	digitalWrite(PIN_TRIGGER, LOW);
+	delayMicroseconds(2);
+
+	digitalWrite(PIN_TRIGGER, HIGH);
+	delayMicroseconds(10);
+
+	duration = pulseIn(PIN_ECHO, HIGH);
+	distance = duration/58;
+
+	if (distance < SENSOR_MAX_RANGE && distance > 0){
+		Serial.println("Distance to object: " + String(distance) + " cm");
+	}
+#endif
 	sec_time = millis();
 	if (sec++ == 60) {
 		sec = 0;

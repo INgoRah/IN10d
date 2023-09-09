@@ -593,13 +593,30 @@ bool SwitchHandler::setPio(union pio dst, uint8_t adr[8], uint8_t d, enum _pio_m
 		// PIO0: PWM on pin 5
 		// D3 - Relais ouput, negative polarity - active switching GND
 		// D5 - PWM output (dimed LED) via open coollector transistor
-		// D2 - PIR
+		// D2 - PIR (Note: PIO2 maps to D10)
 		// D6 - used for alarm signal to host (class TwiHost)
 		// 13 LED
-		if (dst.da.pio == 0 || dst.da.pio == 2 || dst.da.pio == 5)
+		if (dst.da.pio == 0 || dst.da.pio == 5)
 			return false;
 
 		uint8_t pin = dst.da.pio;
+		/* special mapping */
+		switch (dst.da.pio) {
+			case 1:
+				pin = 9;
+				break;
+			case 2:
+				pin = 10;
+				break;
+			case 6:
+				pin = 11;
+				break;
+			case 7:
+				pin = 12;
+				break;
+			/* PIO4 -> D4 (unused)
+			PIO4 -> D4 (unused) */
+		}
 #ifdef EXT_DEBUG
 		if (debug > 2) {
 			Serial.print(F(" pin "));

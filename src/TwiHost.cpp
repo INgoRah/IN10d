@@ -5,6 +5,11 @@
 #include <avr/wdt.h>
 #include <main.h>
 #include <TwiHost.h>
+#ifdef INCLUDE_UDP
+#include <SPI.h>
+#include <Ethernet.h>
+#include <EthernetUdp.h>
+#endif
 #include "SwitchHandler.h"
 
 #define CMD_RESET               0xF0	/* No param */
@@ -32,6 +37,15 @@ extern unsigned long ledOnTime;
 
 unsigned long host_lock = 0;
 
+#ifdef INCLUDE_UDP
+byte mac[] = {
+  0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
+IPAddress ip(192, 168, 1, 250);
+unsigned int localPort = 8888;      // local port to listen on
+// An EthernetUDP instance to let us send and receive packets over UDP
+EthernetUDP Udp;
+#endif
+
 void (*TwiHost::user_onCommand)(uint8_t, uint8_t);
 
 // cache the last read byte on 1W bus
@@ -57,6 +71,10 @@ void TwiHost::begin(uint8_t slaveAdr)
 	Wire.begin(slaveAdr);
 	Wire.onReceive(receiveEvent);
 	Wire.onRequest(requestEvent);
+#ifdef INCLUDE_UDP
+	Ethernet.begin(mac,ip);
+	Udp.begin(localPort);
+#endif
 }
 
 void TwiHost::onCommand( void (*function)(uint8_t, uint8_t) )
@@ -327,7 +345,7 @@ void TwiHost::loop()
 #endif
 		if (Wire.available()) {
 			(void)Wire.read();
-		}
+			}
 		rxBytes = 0;
 	}
 	if (host.events.size() > 0 || _ack != _seq) {
@@ -392,11 +410,11 @@ void TwiHost::addEvent(union d_adr_8 dst, uint16_t data, uint8_t type)
 
 /* This function is called from an event
 */
+
 void TwiHost::handleAck(uint8_t ack)
 {
 #ifdef DEBUG
 	unsigned long tm = millis() - host_lock;
-
 	if (debug > 4 && host_lock) {
 		Serial.print (F("I2C locked time = "));
 		Serial.println(tm);
