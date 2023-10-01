@@ -606,16 +606,14 @@ bool SwitchHandler::setPio(union pio dst, uint8_t adr[8], uint8_t d, enum _pio_m
 				pin = 9;
 				break;
 			case 2:
-				pin = 10;
-				break;
-			case 6:
-				pin = 11;
-				break;
-			case 7:
 				pin = 12;
 				break;
-			/* PIO4 -> D4 (unused)
-			PIO4 -> D4 (unused) */
+			case 3:
+				pin = 10;
+				break;
+			case 4:
+				pin = 11;
+				break;
 		}
 #ifdef EXT_DEBUG
 		if (debug > 2) {

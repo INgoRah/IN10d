@@ -32,14 +32,14 @@ Used pins
  D8 .. D13 = PB0 .. PB5,
  A0 .. A5 = PC0 .. PC5):
 D2 - Internal PIR, maps to 0.9.1
-D3 - Relais ouput, negative polarity - active switching GND, maps to 0.9.3
+D3 -
 D4 - Misc Alarm PIN, maps to 0.9.2
 D5 - PWM output (dimed LED) via open coollector transistor, maps to 0.9.0
 D6 - used for alarm signal to host (class TwiHost)
 D7 - External PIR, maps to 0.9.4
 D8 (PB0) - Power Interval
 D9 -
-bD10 -
+D10 - Relais ouput, negative polarity - active switching GND, maps to 0.9.3
 D11 -
 D12 -
 D13 - built in LED
@@ -50,12 +50,12 @@ A6 (ADC6) - Light sensor (analog)
 Virtual adress mapping
 0.9.0 - output PWM on D5
 0.9.1 - output D9
-0.9.2 - input Misc Alarm PIN / output D10
-0.9.3 - output D3
-0.9.4 - ignored
+0.9.2 - input Misc Alarm PIN / D12
+0.9.3 - output D10
+0.9.4 - D11
 0.9.5 - ignored
-0.9.6 - D11
-0.9.7 - D12
+0.9.7 - ignored
+x - input D3
 */
 
 /*
@@ -127,6 +127,7 @@ void alarm_loop();
 * Function definitions
 */
 void setup() {
+	int i;
 	/* the watchdog timer remains active even after a system reset (except a
 	 * power-on condition), using the fastest prescaler value.
 	 * It is therefore required to turn off the watchdog early
@@ -139,14 +140,14 @@ void setup() {
 	light = 125;
 	Serial.print(F("IN10D "));
 	Serial.print(F(VERS_TAG));
-	digitalWrite(3, 1);
-	pinMode(3, OUTPUT);
+	//digitalWrite(3, 1);
+	//pinMode(3, OUTPUT);
 	//pinMode(4, INPUT_PULLUP);
-	//pinMode(7, INPUT);
-	pinMode(9, OUTPUT);
-	pinMode(10, OUTPUT);
-	pinMode(11, OUTPUT);
-	pinMode(12, OUTPUT);
+	pinMode(3, INPUT);
+	for (i = 9; i < 13; i++) {
+		digitalWrite(i, HIGH);
+		pinMode(i, OUTPUT);
+	}
 
 	delay (10);
 	// host.onCommand(hostCommand);
@@ -157,14 +158,14 @@ void setup() {
 	ow.begin(ds);
 	//Wire.setWireTimeout(250, true);
 	swHdl.begin(ds);
-	/* enable interupts on PB0 (= D8) */
+	/* enable interupts on PB0 (= D8), Power impulse */
 	PCMSK0 |= (_BV(PCINT0));
 	/* enable interrupts for the 1-wire monitor */
 	PCMSK1 |= (_BV(PCINT8) | _BV(PCINT9) | _BV(PCINT10) | _BV(PCINT11));
-	/* enable interupts on PD2, 4 and 7 (= D2, D4, D7) */
-	PCMSK2 |= (_BV(PCINT18) /*| _BV(PCINT20) | _BV(PCINT23)*/);
-	PCIFR |= _BV(PCIF1) | _BV(PCIF2); // clear any outstanding interrupt
-	PCICR |= _BV(PCIE1) | _BV(PCIE2); // enable interrupt for the group
+	/* enable interupts on PD2, PD3 (4, 7) (= D2, D3, D4, D7) */
+	PCMSK2 |= (_BV(PCINT18) | _BV(PCINT19) /*| _BV(PCINT20) | _BV(PCINT23)*/);
+	PCIFR = _BV(PCIF0) | _BV(PCIF1) | _BV(PCIF2); // clear any outstanding interrupt
+	PCICR = _BV(PCIE0) | _BV(PCIE1) | _BV(PCIE2); // enable interrupt for the group
 
 	delay (50);
 #if 0
@@ -263,14 +264,13 @@ ISR (PCINT2_vect) // handle pin change interrupt for A0 to A4 here
 	pind = PIND;
 	/* check for change to high */
 	if ((pind & _BV(PD2)) && (pind_old & _BV(PD2)) == 0)
-		pinSignal |= 1;
-	//if ((pind & _BV(PD7)) && (pind_old & _BV(PD7)) == 0)
-	if ((pind & _BV(PD7)) == 0)
-		pinSignal |= 0x8;
-
+		pinSignal |= 0x1;
 	/* report on change to low level */
 	if (((pind & _BV(PD4)) == 0) && (pind_old & _BV(PD4)))
 		pinSignal |= 0x2;
+
+	if ((pind & _BV(PD3)) && (pind_old & _BV(PD3)) == 0)
+		pinSignal |= 0x4;
 
 	pind_old = pind;
 }
@@ -349,6 +349,8 @@ void pin_loop()
 		swHdl.switchHandle(0, 9, 1);
 	if (pinSignal & 0x2)
 		swHdl.switchHandle(0, 9, 0x2);
+	if (pinSignal & 0x4)
+		swHdl.switchHandle(0, 9, 0x4);
 #if 0
 	if (pinSignal & 0x4)
 		swHdl.switchHandle(0, 9, 0x8);
