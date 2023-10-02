@@ -5,6 +5,11 @@
 #include <avr/wdt.h>
 #include <main.h>
 #include <TwiHost.h>
+#ifdef INCLUDE_UDP
+#include <SPI.h>
+#include <Ethernet.h>
+#include <EthernetUdp.h>
+#endif
 #include "SwitchHandler.h"
 
 #define CMD_RESET               0xF0	/* No param */
@@ -32,6 +37,15 @@ extern unsigned long ledOnTime;
 
 unsigned long host_lock = 0;
 
+#ifdef INCLUDE_UDP
+byte mac[] = {
+  0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
+IPAddress ip(192, 168, 1, 250);
+unsigned int localPort = 8888;      // local port to listen on
+// An EthernetUDP instance to let us send and receive packets over UDP
+EthernetUDP Udp;
+#endif
+
 void (*TwiHost::user_onCommand)(uint8_t, uint8_t);
 
 // cache the last read byte on 1W bus
@@ -57,6 +71,10 @@ void TwiHost::begin(uint8_t slaveAdr)
 	Wire.begin(slaveAdr);
 	Wire.onReceive(receiveEvent);
 	Wire.onRequest(requestEvent);
+#ifdef INCLUDE_UDP
+	Ethernet.begin(mac,ip);
+	Udp.begin(localPort);
+#endif
 }
 
 void TwiHost::onCommand( void (*function)(uint8_t, uint8_t) )
@@ -112,6 +130,7 @@ void TwiHost::commandData()
 
 	// check for last ack...if not done, do not pop
 	if (_ack != _seq) {
+#ifdef DEBUG
 		if (debug > 2) {
 			log_time();
 			Serial.print (F("repeating "));
@@ -119,6 +138,7 @@ void TwiHost::commandData()
 			Serial.print (F(" last="));
 			Serial.println (_ack, HEX);
 		}
+#endif
 		setStatus(STAT_OK);
 		return;
 	}
@@ -224,9 +244,11 @@ void TwiHost::command()
 				setStatus(STAT_OK);
 			else {
 				setStatus(STAT_NOPE);
+#ifdef DEBUG
 				log_time();
 				printDst(dst);
 				Serial.println(F(" Host cmd failed!"));
+#endif
 			}
 			break;
 		}
@@ -315,17 +337,15 @@ void TwiHost::loop()
 	}
 	if (rxBytes > 0) {
 		/* should never happen */
+#ifdef DEBUG
 		if (debug > 0) {
 			Serial.print (F("Data not handled: "));
 			Serial.print (Wire.available());
 		}
+#endif
 		if (Wire.available()) {
-			uint8_t d = Wire.read();
-			if (debug > 0) {
-				Serial.print (F(" Bytes, Data="));
-				Serial.println (d, HEX);
+			(void)Wire.read();
 			}
-		}
 		rxBytes = 0;
 	}
 	if (host.events.size() > 0 || _ack != _seq) {
@@ -390,25 +410,30 @@ void TwiHost::addEvent(union d_adr_8 dst, uint16_t data, uint8_t type)
 
 /* This function is called from an event
 */
+
 void TwiHost::handleAck(uint8_t ack)
 {
+#ifdef DEBUG
 	unsigned long tm = millis() - host_lock;
-
 	if (debug > 4 && host_lock) {
 		Serial.print (F("I2C locked time = "));
 		Serial.println(tm);
 	}
+#endif
 	if (ack == _seq) {
 		// serviced
 		_ack = ack;
+#ifdef DEBUG
 		if (debug > 3) {
 			log_time();
 			Serial.print (F("ACKed "));
 			Serial.println(ack, HEX);
 		}
+#endif
 		setStatus(STAT_OK);
 	} else {
 		setStatus(STAT_WRONG);
+#ifdef DEBUG
 		if (debug > 0) {
 			log_time();
 			Serial.print (F("ACK mismatch "));
@@ -416,6 +441,7 @@ void TwiHost::handleAck(uint8_t ack)
 			Serial.print (F(" != "));
 			Serial.println (_seq, HEX);
 		}
+#endif
 	}
 }
 
@@ -435,6 +461,7 @@ void TwiHost::receiveEvent(int howMany) {
  		cmd 3 not yet handled, Stat  2 new 3
 		last ACK 4A != 4A
 		*/
+#ifdef DEBUG
 		if (debug > 0) {
 			Serial.print (F(" cmd "));
 			Serial.print (cmd);
@@ -447,17 +474,18 @@ void TwiHost::receiveEvent(int howMany) {
 			Serial.print (F(" != "));
 			Serial.println (host._seq, HEX);
 		}
+#endif
 	}
 	/* assert if not at least 1? */
 	switch (d)
 	{
 	case CMD_REBOOT:
+#ifdef DEBUG
 		Serial.print (F("Forced Reset..."));
+#endif
 		while (1);
 	case CMD_RESET:
 		host.setStatus(STAT_OK);
-		Serial.print (F("reset, cmd "));
-		Serial.print (cmd);
 		cmd = 0xff;
 		break;
 #if 0
@@ -475,7 +503,6 @@ void TwiHost::receiveEvent(int howMany) {
 		// fall through
 	case CMD_SET_READ_PTR:
 		if (howMany < 2) {
-			Serial.println (F("READ PTX underflow"));
 			reg = DS2482_ALARM_STATUS_REGISTER;
 		}
 		else
@@ -517,8 +544,6 @@ void TwiHost::receiveEvent(int howMany) {
 			min = Wire.read();
 		if (howMany > 3)
 			sun = Wire.read();
-		else
-			Serial.println (F("Time underflow"));
 
 		host.setStatus(STAT_OK);
 		break;
@@ -530,7 +555,6 @@ void TwiHost::receiveEvent(int howMany) {
 			rxBuf[i] = Wire.read();
 		break;
 	default:
-		Serial.println(F("unkown CMD"));
 		break;
 #if 0
 	case 2:

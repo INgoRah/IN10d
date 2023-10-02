@@ -73,7 +73,7 @@ class TwiHost
 		static void requestEvent();
 
 	public:
-		CircularBuffer<struct logData, 5> events;
+		CircularBuffer<struct logData, 2> events;
 		uint8_t status;
 
 		TwiHost();

@@ -27,16 +27,35 @@
 #include "SwitchHandler.h"
 
 /*
-Used pins:
+Used pins
+(D0 .. D7 = PD0 .. PD7,
+ D8 .. D13 = PB0 .. PB5,
+ A0 .. A5 = PC0 .. PC5):
 D2 - Internal PIR, maps to 0.9.1
-D3 - Relais ouput, negative polarity - active switching GND, maps to 0.9.3
+D3 -
 D4 - Misc Alarm PIN, maps to 0.9.2
 D5 - PWM output (dimed LED) via open coollector transistor, maps to 0.9.0
 D6 - used for alarm signal to host (class TwiHost)
-D7 - External PIR, maps to 0.9.4
+D7 - Power Interval
+D8 (PB0) - External PIR, maps to 0.9.4
+D9 -
+D10 - Relais ouput, negative polarity - active switching GND, maps to 0.9.3
+D11 -
+D12 -
 D13 - built in LED
 A0..A4 - 1-wire monitor
-A6 - Light sensor (analog)
+A6 (ADC6) - Light sensor (analog)
+*/
+/*
+Virtual adress mapping
+0.9.0 - output PWM on D5
+0.9.1 - output D9
+0.9.2 - input Misc Alarm PIN / D12
+0.9.3 - output D10
+0.9.4 - D11
+0.9.5 - ignored
+0.9.7 - ignored
+x - input D3
 */
 
 /*
@@ -100,6 +119,7 @@ uint8_t *hostBuf = NULL;
 static void ledBlink();
 unsigned long ledOnTime = 0;
 #endif
+static void check_light();
 void light_loop();
 void pin_loop();
 void alarm_loop();
@@ -108,6 +128,7 @@ void alarm_loop();
 * Function definitions
 */
 void setup() {
+	int i;
 	/* the watchdog timer remains active even after a system reset (except a
 	 * power-on condition), using the fastest prescaler value.
 	 * It is therefore required to turn off the watchdog early
@@ -117,13 +138,17 @@ void setup() {
 	Serial.begin(115200);
 
 	debug = 3;
-	light = 125;
 	Serial.print(F("IN10D "));
 	Serial.print(F(VERS_TAG));
-	digitalWrite(3, 1);
-	pinMode(3, OUTPUT);
+	//digitalWrite(3, 1);
+	//pinMode(3, OUTPUT);
 	pinMode(4, INPUT_PULLUP);
-	pinMode(7, INPUT);
+	pinMode(3, INPUT);
+	for (i = 9; i < 13; i++) {
+		digitalWrite(i, HIGH);
+		pinMode(i, OUTPUT);
+	}
+
 	delay (10);
 	// host.onCommand(hostCommand);
 	host.begin (HOST_SLAVE_ADR);
@@ -133,14 +158,14 @@ void setup() {
 	ow.begin(ds);
 	//Wire.setWireTimeout(250, true);
 	swHdl.begin(ds);
-	/* enable interupts on PB0 (= D8) */
+	/* enable interupts on PB0 (= D8), Power impulse */
 	PCMSK0 |= (_BV(PCINT0));
 	/* enable interrupts for the 1-wire monitor */
 	PCMSK1 |= (_BV(PCINT8) | _BV(PCINT9) | _BV(PCINT10) | _BV(PCINT11));
-	/* enable interupts on PD2, 4 and 7 (= D2, D4, D7) */
-	PCMSK2 |= (_BV(PCINT18) | _BV(PCINT20) | _BV(PCINT23));
-	PCIFR |= _BV(PCIF1) | _BV(PCIF2); // clear any outstanding interrupt
-	PCICR |= _BV(PCIE1) | _BV(PCIE2); // enable interrupt for the group
+	/* enable interupts on PD2, PD3, PD7 (4, 7) (= D2, D3, D4, D7) */
+	PCMSK2 |= (_BV(PCINT18) | _BV(PCINT19) | _BV(PCINT23) /*| _BV(PCINT20) */);
+	PCIFR = _BV(PCIF0) | _BV(PCIF1) | _BV(PCIF2); // clear any outstanding interrupt
+	PCICR = _BV(PCIE0) | _BV(PCIE1) | _BV(PCIE2); // enable interrupt for the group
 
 	delay (50);
 #if 0
@@ -159,6 +184,10 @@ void setup() {
 	alarmPolling = 0;
 	debug = 0;
 	host.addEvent (SYS_START, 0, 9, 0);
+	// init light
+	light = analogRead(A6);
+	ADCSRA = 0;
+	light = (light >> 2) & 0xFE;
 }
 
 #if 1
@@ -197,14 +226,14 @@ ISR(WDT_vect, ISR_NAKED)
 #endif
 
 /* interupt on PORTB:
- PB0 (= D8): Power Interval (500/1 KWh = 2 Wh) */
+ PB0 (= D8) unused  */
 ISR (PCINT0_vect)
 {
 	uint8_t pinb;
 
 	pinb = PINB;
 	if ((pinb & _BV(PB0)) == 0)
-		pinSignal |= 0x8;
+		pinSignal |= 0x10;
 }
 
 /* interrupt handling for change on 1-wire */
@@ -239,14 +268,16 @@ ISR (PCINT2_vect) // handle pin change interrupt for A0 to A4 here
 	pind = PIND;
 	/* check for change to high */
 	if ((pind & _BV(PD2)) && (pind_old & _BV(PD2)) == 0)
-		pinSignal |= 1;
-	//if ((pind & _BV(PD7)) && (pind_old & _BV(PD7)) == 0)
-	if ((pind & _BV(PD7)) == 0)
-		pinSignal |= 0x8;
-
+		pinSignal |= 0x1;
 	/* report on change to low level */
 	if (((pind & _BV(PD4)) == 0) && (pind_old & _BV(PD4)))
 		pinSignal |= 0x2;
+	/* Power Interval (500/1 KWh = 2 Wh) */
+	if (((pind & _BV(PD7)) == 0) && (pind_old & _BV(PD7)))
+		pinSignal |= 0x8;
+
+	if ((pind & _BV(PD3)) && (pind_old & _BV(PD3)) == 0)
+		pinSignal |= 0x4;
 
 	pind_old = pind;
 }
@@ -267,28 +298,37 @@ static void ledBlink()
 }
 #endif
 
+const int SENSOR_MAX_RANGE = 500; // in cm
+unsigned long duration;
+unsigned int distance;
+
+static void check_light()
+{
+	uint16_t t;
+
+	ADCSRA = (1<<ADPS2) | (1<<ADPS1) | (1<<ADEN);
+	_delay_us (150);
+	t = analogRead(A6);
+	ADCSRA = 0;
+	t = (t >> 2) & 0xFE;
+	if (light != t) {
+		light = (4 * light + t) / 5;;
+		host.addEvent (TYPE_BRIGHTNESS, 0, 9, light);
+	}
+}
+
 void light_loop()
 {
 	static unsigned long sec_time = 0;
 
 	if ((millis() - sec_time) < 1000)
 		return;
+
 	sec_time = millis();
 	if (sec++ == 60) {
 		sec = 0;
-		if (light_sensor) {
-			uint16_t t;
-
-			ADCSRA = (1<<ADPS2) | (1<<ADPS1) | (1<<ADEN);
-			_delay_us (150);
-			t = analogRead(A6);
-			ADCSRA = 0;
-			t = (t >> 2) & 0xFE;
-			if (light != t) {
-				light = (4 * light + t) / 5;;
-				host.addEvent (TYPE_BRIGHTNESS, 0, 9, light);
-			}
-		}
+		if (light_sensor)
+			check_light();
 		if (min++ == 60) {
 			min = 0;
 			if (hour++ == 24)
@@ -301,11 +341,19 @@ void pin_loop()
 {
 	if (pinSignal == 0)
 		return;
+#ifdef DEBUG
+	if (debug > 3) {
+		Serial.print(F("PIN Signal: "));
+		Serial.println(pinSignal);
+	}
+#endif
 	// interrupt to host
 	if (pinSignal & 0x1)
 		swHdl.switchHandle(0, 9, 1);
 	if (pinSignal & 0x2)
 		swHdl.switchHandle(0, 9, 0x2);
+	if (pinSignal & 0x4)
+		swHdl.switchHandle(0, 9, 0x4);
 #if 0
 	if (pinSignal & 0x4)
 		swHdl.switchHandle(0, 9, 0x8);
@@ -343,10 +391,12 @@ void alarm_loop()
 				} else {
 					if (ds->last_err) {
 						// lets retry next loop
+#ifdef DEBUG
 						log_time();
 						Serial.print(i);
 						Serial.print(F(": alarm retry exceeded "));
 						Serial.println(ds->last_err);
+#endif
 						wdr();
 						return;
 					}
