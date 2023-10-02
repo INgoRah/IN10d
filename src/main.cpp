@@ -36,8 +36,8 @@ D3 -
 D4 - Misc Alarm PIN, maps to 0.9.2
 D5 - PWM output (dimed LED) via open coollector transistor, maps to 0.9.0
 D6 - used for alarm signal to host (class TwiHost)
-D7 - External PIR, maps to 0.9.4
-D8 (PB0) - Power Interval
+D7 - Power Interval
+D8 (PB0) - External PIR, maps to 0.9.4
 D9 -
 D10 - Relais ouput, negative polarity - active switching GND, maps to 0.9.3
 D11 -
@@ -162,8 +162,8 @@ void setup() {
 	PCMSK0 |= (_BV(PCINT0));
 	/* enable interrupts for the 1-wire monitor */
 	PCMSK1 |= (_BV(PCINT8) | _BV(PCINT9) | _BV(PCINT10) | _BV(PCINT11));
-	/* enable interupts on PD2, PD3 (4, 7) (= D2, D3, D4, D7) */
-	PCMSK2 |= (_BV(PCINT18) | _BV(PCINT19) /*| _BV(PCINT20) | _BV(PCINT23)*/);
+	/* enable interupts on PD2, PD3, PD7 (4, 7) (= D2, D3, D4, D7) */
+	PCMSK2 |= (_BV(PCINT18) | _BV(PCINT19) | _BV(PCINT23) /*| _BV(PCINT20) */);
 	PCIFR = _BV(PCIF0) | _BV(PCIF1) | _BV(PCIF2); // clear any outstanding interrupt
 	PCICR = _BV(PCIE0) | _BV(PCIE1) | _BV(PCIE2); // enable interrupt for the group
 
@@ -226,14 +226,14 @@ ISR(WDT_vect, ISR_NAKED)
 #endif
 
 /* interupt on PORTB:
- PB0 (= D8): Power Interval (500/1 KWh = 2 Wh) */
+ PB0 (= D8) unused  */
 ISR (PCINT0_vect)
 {
 	uint8_t pinb;
 
 	pinb = PINB;
 	if ((pinb & _BV(PB0)) == 0)
-		pinSignal |= 0x8;
+		pinSignal |= 0x10;
 }
 
 /* interrupt handling for change on 1-wire */
@@ -272,6 +272,9 @@ ISR (PCINT2_vect) // handle pin change interrupt for A0 to A4 here
 	/* report on change to low level */
 	if (((pind & _BV(PD4)) == 0) && (pind_old & _BV(PD4)))
 		pinSignal |= 0x2;
+	/* Power Interval (500/1 KWh = 2 Wh) */
+	if (((pind & _BV(PD7)) == 0) && (pind_old & _BV(PD7)))
+		pinSignal |= 0x8;
 
 	if ((pind & _BV(PD3)) && (pind_old & _BV(PD3)) == 0)
 		pinSignal |= 0x4;
