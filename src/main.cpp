@@ -119,6 +119,7 @@ uint8_t *hostBuf = NULL;
 static void ledBlink();
 unsigned long ledOnTime = 0;
 #endif
+static void check_light();
 void light_loop();
 void pin_loop();
 void alarm_loop();
@@ -137,12 +138,11 @@ void setup() {
 	Serial.begin(115200);
 
 	debug = 3;
-	light = 125;
 	Serial.print(F("IN10D "));
 	Serial.print(F(VERS_TAG));
 	//digitalWrite(3, 1);
 	//pinMode(3, OUTPUT);
-	//pinMode(4, INPUT_PULLUP);
+	pinMode(4, INPUT_PULLUP);
 	pinMode(3, INPUT);
 	for (i = 9; i < 13; i++) {
 		digitalWrite(i, HIGH);
@@ -184,6 +184,10 @@ void setup() {
 	alarmPolling = 0;
 	debug = 0;
 	host.addEvent (SYS_START, 0, 9, 0);
+	// init light
+	light = analogRead(A6);
+	ADCSRA = 0;
+	light = (light >> 2) & 0xFE;
 }
 
 #if 1
@@ -295,6 +299,21 @@ const int SENSOR_MAX_RANGE = 500; // in cm
 unsigned long duration;
 unsigned int distance;
 
+static void check_light()
+{
+	uint16_t t;
+
+	ADCSRA = (1<<ADPS2) | (1<<ADPS1) | (1<<ADEN);
+	_delay_us (150);
+	t = analogRead(A6);
+	ADCSRA = 0;
+	t = (t >> 2) & 0xFE;
+	if (light != t) {
+		light = (4 * light + t) / 5;;
+		host.addEvent (TYPE_BRIGHTNESS, 0, 9, light);
+	}
+}
+
 void light_loop()
 {
 	static unsigned long sec_time = 0;
@@ -302,36 +321,11 @@ void light_loop()
 	if ((millis() - sec_time) < 1000)
 		return;
 
-#ifdef TEST_DISTANCE
-	digitalWrite(PIN_TRIGGER, LOW);
-	delayMicroseconds(2);
-
-	digitalWrite(PIN_TRIGGER, HIGH);
-	delayMicroseconds(10);
-
-	duration = pulseIn(PIN_ECHO, HIGH);
-	distance = duration/58;
-
-	if (distance < SENSOR_MAX_RANGE && distance > 0){
-		Serial.println("Distance to object: " + String(distance) + " cm");
-	}
-#endif
 	sec_time = millis();
 	if (sec++ == 60) {
 		sec = 0;
-		if (light_sensor) {
-			uint16_t t;
-
-			ADCSRA = (1<<ADPS2) | (1<<ADPS1) | (1<<ADEN);
-			_delay_us (150);
-			t = analogRead(A6);
-			ADCSRA = 0;
-			t = (t >> 2) & 0xFE;
-			if (light != t) {
-				light = (4 * light + t) / 5;;
-				host.addEvent (TYPE_BRIGHTNESS, 0, 9, light);
-			}
-		}
+		if (light_sensor)
+			check_light();
 		if (min++ == 60) {
 			min = 0;
 			if (hour++ == 24)
@@ -344,6 +338,12 @@ void pin_loop()
 {
 	if (pinSignal == 0)
 		return;
+#ifdef DEBUG
+	if (debug > 3) {
+		Serial.print(F("PIN Signal: "));
+		Serial.println(pinSignal);
+	}
+#endif
 	// interrupt to host
 	if (pinSignal & 0x1)
 		swHdl.switchHandle(0, 9, 1);
