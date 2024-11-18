@@ -1,6 +1,49 @@
 Arduino 1-Wire Homeautomation Base
 
-# Changes
+- [About](#about)
+	- [Hardware](#hardware)
+	- [Limitations](#limitations)
+	- [Changes](#changes)
+- [Documentation](#documentation)
+	- [Build](#build)
+	- [Features Details](#features-details)
+		- [Alarm handling](#alarm-handling)
+		- [Address format and limitations](#address-format-and-limitations)
+		- [Switching examples](#switching-examples)
+		- [Measures to overcome limitations](#measures-to-overcome-limitations)
+- [Interfaces](#interfaces)
+	- [MQTT (RP2040 / Ethernet Module)](#mqtt-rp2040--ethernet-module)
+	- [CLI](#cli)
+	- [I2C](#i2c)
+		- [I2C format](#i2c-format)
+		- [Host Communication](#host-communication)
+		- [Handling events Implementation details:](#handling-events-implementation-details)
+		- [sending commands details](#sending-commands-details)
+	- [Switch configuration](#switch-configuration)
+	- [EEPROM config space](#eeprom-config-space)
+
+# About
+
+Monitors 1-Wire lines for incoming interrupts (alarms) to be used instead of polling.
+Controls a 8 channel DS2482 (one wire master) via I2C master or optional the software OneWire bus  
+I2C slave interface one the same bus for PI plus one  GPIO line for alarm indication.
+Watchdog feature for PI polling to switch over to fallback Arduino soltuion
+Simple light switching matrix based on memory optimized addresses, static or timed
+Using own GPIOs for output and input mapped to special adress
+
+## Hardware
+
+Using a custom board with a DS2482-800 one wire master and an Arduino Nano for control mapped to a RasPi via I2C and GPIO for enhanced control (heating control, time, precense, etc.).
+A PICO based soltuion with a Ethernet interface and MQTT interface is in work
+
+![Wiring Diagram](pico-enc28j60-wiring.svg)
+
+## Limitations
+
+Using the same I2C bus for slave and master requires bus protection and error handling -> solution is an Ethernet interface on a more powerful controller (PICO, ESP)  
+Limitted RAM on the Nano requires smart one wire addresses (coding bus, address into the addres, assuming other address bytes). For optimal switch memory space only max two ouput pins are used. Also to overcome this a PICO or ESP can be used.
+
+## Changes
 [x] timer based control (different switch table?). Use CLI sw t <bus> <adr> <latch> <bus> <adr> <pio>.
     Default 30 secs at the moment
 [x] Host IF for switch table
@@ -79,11 +122,16 @@ Still the lookup table could be too large and this needs to be mitigated.
   or use custom bootloader for flash storing option
 - lookup in EEPROM: cache EEPROM or create new look up table (bus|adr = 4 x 31 lines returns dst by latch index),  max 1 KB
 
-## CLI examples
+# Interfaces
 
-## I2C format
-C3 - channel select like in DS2482
-F0 - reset
+## MQTT (RP2040 / Ethernet Module)
+
+## CLI
+
+## I2C
+
+### I2C format
+
 69 - mode selection: [2] [4]
 5A - search first device, wait for search cycle for reading, returns 0 if nothing found or | id | adr [8]
 5B - search next device, returns 0 if nothing found or | id | adr [8]

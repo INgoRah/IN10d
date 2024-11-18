@@ -4,9 +4,17 @@
 /*
  * Includes
  */
+#include "Arduino.h" // for delayMicroseconds, digitalPinToBitMask, etc
+#ifdef TARGET_RP2040
+#define wdt_reset() \
+	do          \
+	{           \
+	} while (0)
+#else
 #include <avr/sleep.h>
 #include <avr/pgmspace.h>
 #include <avr/wdt.h>
+#endif
 
 #include "main.h"
 
@@ -73,7 +81,16 @@ byte debug;
 /*
  * Objects
  */
+#ifdef TARGET_RP2040
+IPAddress ip(192, 168, 178, 10);
+IPAddress server(192, 168, 178, 37);
+EthernetClient ethClient;
+PubSubClient client(ethClient);
+byte mac[] = {
+    0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED};
+#else
 TwiHost host;
+#endif
 DS2482 ds1(0);
 OwDevices ow;
 SwitchHandler swHdl (&ow);
