@@ -416,6 +416,33 @@ int MainTest(int test)
 	return 0;
 }
 
+uint8_t atoh(const char *str, uint8_t offset = 0)
+{
+	uint8_t b, lo;
+
+	b = toupper(str[offset++]);
+	if (isxdigit(b))
+	{
+		if (b > '9')
+			// software offset for A-F
+			b -= 7;
+		// subtract ASCII offset
+		b -= 0x30;
+		lo = toupper(str[offset]);
+		if (lo != 0 && isxdigit(lo))
+		{
+			b = b << 4;
+			if (lo > '9')
+				lo -= 7;
+			lo -= 0x30;
+			b = b + lo;
+		}
+		return b;
+	}
+
+	return 0;
+}
+
 int main()
 {
 	int ret = 0, i;
@@ -426,8 +453,13 @@ int main()
 #endif
 	debug = 4;
 	light = 220;
-
-	for (i = 1; i < 8; i++) {
+	String s("a00a");
+	uint8_t v = atoh(s.c_str());
+	Serial.print(v, HEX);
+	v = atoh(s.c_str(), 2);
+	Serial.print(v, HEX);
+	for (i = 1; i < 8; i++)
+	{
 		ret = MainTest(i);
 		if (ret) {
 			do {

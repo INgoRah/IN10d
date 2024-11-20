@@ -2,7 +2,7 @@
 #define _TWIHOST_H
 
 #include <Arduino.h>       // for delayMicroseconds, digitalPinToBitMask, etc
-#include "CircularBuffer.h"
+#include "CircularBuffer.hpp"
 
 #define MODE_WATCHDOG 0x1
 #define HOST_ALRM_PIN 6

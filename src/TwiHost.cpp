@@ -543,7 +543,7 @@ void TwiHost::receiveEvent(int howMany) {
 		if (howMany > 2)
 			min = Wire.read();
 		if (howMany > 3)
-			sun = Wire.read();
+			(void)Wire.read();
 
 		host.setStatus(STAT_OK);
 		break;

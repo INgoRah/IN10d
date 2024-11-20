@@ -307,7 +307,7 @@ uint8_t OwDevices::ds2408PioSet(byte bus, uint8_t* addr, uint8_t pio)
 		//if (ow->last_err == 0)
 		// lets try a pseudo read at least to avoid
 		// a hung dev
-			r = ow->read();
+		r = ow->read();
 		if (r == 0xAA)
 			break;
 		if (err == 0)

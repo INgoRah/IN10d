@@ -69,6 +69,7 @@ x - input D3
 #define ALARM_SRCH_RETRY 10
 
 byte debug;
+byte pins;
 
 /*
  * Objects
@@ -82,7 +83,6 @@ OneWireBase *ds = &ds1;
 uint8_t sec;
 uint8_t min;
 uint8_t hour;
-uint8_t sun;
 uint8_t light;
 byte light_sensor = 1;
 uint16_t pow_imp;
@@ -132,24 +132,19 @@ void setup() {
 	/* the watchdog timer remains active even after a system reset (except a
 	 * power-on condition), using the fastest prescaler value.
 	 * It is therefore required to turn off the watchdog early
-     * during program startup */
+	 * during program startup */
 	MCUSR = 0;
 	wdt_disable();
 	Serial.begin(115200);
 
 	debug = 3;
+	pins = 0xff;
 	Serial.print(F("IN10D "));
-	Serial.print(F(VERS_TAG));
+	Serial.println(F(VERS_TAG));
 	//digitalWrite(3, 1);
 	//pinMode(3, OUTPUT);
-	pinMode(4, INPUT_PULLUP);
-	pinMode(3, INPUT);
-	for (i = 9; i < 13; i++) {
-		digitalWrite(i, HIGH);
-		pinMode(i, OUTPUT);
-	}
-
 	delay (10);
+	debug = 0;
 	// host.onCommand(hostCommand);
 	host.begin (HOST_SLAVE_ADR);
 #ifdef EXT_DEBUG
@@ -158,19 +153,33 @@ void setup() {
 	ow.begin(ds);
 	//Wire.setWireTimeout(250, true);
 	swHdl.begin(ds);
+	if (pins & 0x1)
+		pinMode(4, INPUT_PULLUP);
+	if (pins & 0x2)
+		pinMode(3, INPUT);
+	byte mask = 0x10;
+	for (i = 9; i < 13; i++) {
+		if (pins & mask) {
+			digitalWrite(i, HIGH);
+			pinMode(i, OUTPUT);
+		}
+		mask = mask << 1;
+	}
 	/* enable interupts on PB0 (= D8), Power impulse */
 	PCMSK0 |= (_BV(PCINT0));
 	/* enable interrupts for the 1-wire monitor */
 	PCMSK1 |= (_BV(PCINT8) | _BV(PCINT9) | _BV(PCINT10) | _BV(PCINT11));
-	/* enable interupts on PD2, PD3, PD7 (4, 7) (= D2, D3, D4, D7) */
-	PCMSK2 |= (_BV(PCINT18) | _BV(PCINT19) | _BV(PCINT23) /*| _BV(PCINT20) */);
+	if (pins != 0) {
+		/* enable interupts on PD2, PD3, PD7 (4, 7) (= D2, D3, D4, D7) */
+		PCMSK2 |= (_BV(PCINT18) | _BV(PCINT19) | _BV(PCINT23) /*| _BV(PCINT20) */);
+	}
 	PCIFR = _BV(PCIF0) | _BV(PCIF1) | _BV(PCIF2); // clear any outstanding interrupt
 	PCICR = _BV(PCIE0) | _BV(PCIE1) | _BV(PCIE2); // enable interrupt for the group
-
 	delay (50);
 #if 0
 	wdTime = millis();
 #endif
+	dumpCfg();
 #ifdef CLI_SUPPORT
 	cli.begin(&ow);
 #endif
@@ -182,12 +191,13 @@ void setup() {
 	swHdl.initialStates();
 	// poll as soon as possible
 	alarmPolling = 0;
-	debug = 0;
 	host.addEvent (SYS_START, 0, 9, 0);
-	// init light
-	light = analogRead(A6);
-	ADCSRA = 0;
-	light = (light >> 2) & 0xFE;
+	if (light_sensor) {
+		// init light
+		light = analogRead(A6);
+		ADCSRA = 0;
+		light = (light >> 2) & 0xFE;
+	}
 }
 
 #if 1
@@ -298,10 +308,6 @@ static void ledBlink()
 }
 #endif
 
-const int SENSOR_MAX_RANGE = 500; // in cm
-unsigned long duration;
-unsigned int distance;
-
 static void check_light()
 {
 	uint16_t t;
@@ -312,9 +318,25 @@ static void check_light()
 	ADCSRA = 0;
 	t = (t >> 2) & 0xFE;
 	if (light != t) {
-		light = (4 * light + t) / 5;;
+		light = (4 * light + t) / 5;
 		host.addEvent (TYPE_BRIGHTNESS, 0, 9, light);
 	}
+}
+
+void dumpCfg()
+{
+	Serial.print(F(" mode="));
+	Serial.print(swHdl.mode);
+	Serial.print(F(" debug="));
+	Serial.print(debug);
+	Serial.print(F(" light thr ="));
+	Serial.print(swHdl.light_thr);
+	Serial.print(F(" light sensor="));
+	Serial.print(light_sensor);
+	Serial.print(F(" pins="));
+	Serial.print(pins, HEX);
+	Serial.print(F(" light="));
+	Serial.print(light);
 }
 
 void light_loop()
@@ -347,18 +369,19 @@ void pin_loop()
 		Serial.println(pinSignal);
 	}
 #endif
+
 	// interrupt to host
-	if (pinSignal & 0x1)
+	if (pinSignal & 0x1 && pins & 0x1)
 		swHdl.switchHandle(0, 9, 1);
-	if (pinSignal & 0x2)
+	if (pinSignal & 0x2 && pins & 0x2)
 		swHdl.switchHandle(0, 9, 0x2);
-	if (pinSignal & 0x4)
+	if (pinSignal & 0x4 && pins & 0x4)
 		swHdl.switchHandle(0, 9, 0x4);
 #if 0
-	if (pinSignal & 0x4)
+	if (pinSignal & 0x4 )
 		swHdl.switchHandle(0, 9, 0x8);
 #endif
-	if (pinSignal & 0x8) {
+	if (pinSignal & 0x8 && pins & 0x8) {
 		pow_imp++;
 		host.addEvent (POWER_IMP, 0, 9, pow_imp);
 	}
@@ -374,6 +397,7 @@ void alarm_loop()
 	/* the alarmhandler will set the alarm signal to the host
 		after the event data is prepared. Otherwise a host could
 		disturb our switching process */
+	//swHdl.mode = MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH;
 	if (swHdl.mode & MODE_ALRAM_HANDLING) {
 		byte retry;
 		for (byte i = 0; i < MAX_BUS; i++) {
@@ -431,6 +455,7 @@ void loop()
 	alarm_loop();
 	if (millis() - alarmPolling > 3000) {
 		alarmPolling = millis();
+		//swHdl.mode = MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH;
 		if (swHdl.mode & MODE_ALRAM_POLLING) {
 			for (byte i = 0; i < MAX_BUS;i++) {
 				wdr();

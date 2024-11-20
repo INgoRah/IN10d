@@ -17,11 +17,11 @@ extern void log_time();
 extern void printDst8(union d_adr_8 dst);
 extern void printDst(union pio dst);
 extern void printSrc(union s_adr src);
+extern void dumpCfg();
 
 extern byte debug;
 extern uint8_t min;
 extern uint8_t hour;
-extern uint8_t sun;
 extern uint8_t light;
 extern byte light_sensor;
 extern unsigned long host_lock;
