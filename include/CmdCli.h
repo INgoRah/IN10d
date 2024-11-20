@@ -33,6 +33,7 @@ class CmdCli
 		static void funcSwCmd(CmdParser *myParser);
 		static void funcTemp(CmdParser *myParser); /* 9 */
 		static void funcLog(CmdParser *myParser); /* 10 */
+		static void funcPin(CmdParser *myParser); /* 11 */
 #ifdef CHGID_CMD
 		static void funcChgId(CmdParser *myParser); /* 11 */
 #endif

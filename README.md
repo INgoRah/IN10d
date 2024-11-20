@@ -9,18 +9,9 @@ Arduino 1-Wire Homeautomation Base
 [x] Switch with same dst does not clear timer if running.
 [x] Log latch and switch
 
-# Bugs
-    Pressing a button to permanently switch on light is not working
-    setting level = 100 turns light off
-
-# TodDo
-[ ] (ongoing) Timer based on light with configurable threshold
-[ ] Custom timer time per switch
-[ ] (ongoing) Host IF for status read
-[ ] Light independed timed switch. Currently timed switches only if dark
 # Documentation
 
-# Build
+## Build
 Create a post_extra_script.py to copy over to PI:
 Import("env", "projenv")
 env.AddPostAction(
@@ -35,15 +26,11 @@ Build using PlatformIO: %USERPROFILE%\.platformio\penv\Scripts\platformio.exe ru
 
 Debugging with "simulation" target
 
-## Main Tasks
-Monitors 1-Wire lines for incoming interrupts (alarms) to be used instead of polling.
-Controls a DS2482 (one wire master) via I2C master or optional the software OneWire bus
-I2C slave interface for PI plus one  GPIO line for alarm indication
-Watchdog feature for PI polling to switch over to fallback Arduino soltuion
-Simple light switching matrix based on memory optimized addresses
+## Features Details
 
 ### Alarm handling
-Each custom DS2482 generates an alarm signal of > 800 us on the OneWire line. No
+
+Each custom DS2408 generates an alarm signal of > 800 us on the OneWire line. No
 other master supports detection of it. But this is a feature of the iButton.
 Therefore I need a master to at least monitor the line and signal it to an
 other master. The Arduino turned out to be fast and stable to handle basic
@@ -62,18 +49,20 @@ Slaves are based on the OneWireSlave Attiny code uses a format like this:
 29 | id | bus | ~id | ~bus | 66 | 77 | CRC
 with id: 0 .. F
 PIO0/1 are output (usually, but can be configured)
-Latch2..7 are input (usually only 4 are used)
+Latch2..7 are input (usually)
 A special destination type for other devices (like DS2413) is reserved.
 The custom DS2408 implementation also serves a alarm signal of 900 us like
 the iButtons do. This avoids frequent polling (would need to be around 200 ms)
 
 ### Switching examples ###
+
 A button is pressed. The slave generates an alarm signal on the bus and the Arduino
 detects the long signal (> 800 us). It starts polling using the alarm condition
 for the (or all) slaves in alarm condition. Reads out the registers and
 starts a lookup in the timer table and switch table for commands.
 
 ### Measures to overcome limitations
+
 Still the lookup table could be too large and this needs to be mitigated.
 - fixed or stable switches in program space: easy to access via different table
   or use custom bootloader for flash storing option
@@ -85,14 +74,13 @@ Still the lookup table could be too large and this needs to be mitigated.
 C3 - channel select like in DS2482
 F0 - reset
 69 - mode selection: [2] [4]
-5A - search first device, wait for search cycle for reading, returns 0 if nothing found or | id | adr [8]
-5B - search next device, returns 0 if nothing found or | id | adr [8]
-01 - read one event from fifo, status: busy,ok,no_data
-02 - add switch entry:  type, bus, adr1, latch, press [0..2], da.bus,da.adr,da.pio
-03 - write PIO: type, bus, adr1, pio and release lock, check for an event acknowledging the change
-E2 - lock i2c bus and get status, if no events in the queue the lock is released again
-78 - Handle ack: pass the sequence number to be acked, this releases the lock
-
+5A - search first device, wait for search cycle for reading, returns 0 if nothing found or | id | adr [8]  
+5B - search next device, returns 0 if nothing found or | id | adr [8]  
+01 - read one event from fifo, status: busy,ok,no_data  
+02 - add switch entry:  type, bus, adr1, latch, press [0..2], da.bus,da.adr,da.pio  
+03 - write PIO: type, bus, adr1, pio and release lock, check for an event acknowledging the change  
+E2 - lock i2c bus and get status, if no events in the queue the lock is released again  
+78 - Handle ack: pass the sequence number to be acked, this releases the lock  
 
 status: alarm bus 3 | alarm bus 2 | alarm bus 1 | alarm bus0
 bus select
@@ -137,7 +125,7 @@ If event data (0x40)
     This also may release the I2C host bus
     iic.i2cWriteSync(iicAdr, 2, Buffer.from([0x78, rbuf[7]]));
 
-## sending commands details
+### sending commands details
     set read ptr to DS2482_STATUS_REGISTER
     iic.i2cWriteSync(iicAdr, 2, Buffer.from([0xE1, 0xE1]));
     delay(1);
@@ -167,3 +155,25 @@ sw t <timer type> <bus> <adr> <latch> <dst bus> <dst adr> <dst pio> [type]
     latch 10 .. 17: long press
     latch 0 .. 7: normal press
     latch 20 .. 27: pressing
+
+## EEPROM config space
+
+3 6 0 1 0 0 3 0 80 1D 9 2 
+            vers=3 tbl@8 len=3
+	                timed  @15 timed vers=2 len=0 / Max 40
+			       16bit @ 17 vers=0 len=0 / Max 0
+
+
+start:
+pin 0 4 0 30 1 230
+pin 0 4 5 40 2 90
+stop
+pin 0 4 0 eb 0 0
+pin 0 4 0 ee 0 0
+brightness
+pin 0 4 0 e3 129 0
+threshold
+pin 0 4 0 e5 e0 0
+
+pin 0 4 2 44 0 0
+cfg 4 w 1 20 10 1 1 0 0 0 0 0 31 0 0

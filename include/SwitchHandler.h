@@ -7,10 +7,10 @@
 #define MAX_SWITCHES 4
 #define MAX_TIMED_SWITCH 3
 #else
-#define MAX_TIMER 6
-/* per bus 12 addresses and each 5 latches, sometimes long presses additionally */
-#define MAX_SWITCHES MAX_BUS * 12 * 5
-#define MAX_TIMED_SWITCH 10
+#define MAX_TIMER 5
+/* per bus 8 addresses and each 5 latches, sometimes long presses additionally */
+#define MAX_SWITCHES MAX_BUS * 6 * 5
+#define MAX_TIMED_SWITCH 6
 #endif
 #define MAX_DIMMER 4
 #define DEF_SECS 30
@@ -105,19 +105,18 @@ enum tim_type {
 	/** Timer on darkness with soft off per time
 	 *  if supported (dimmable), time 5 secs */
 	TYPE_DARK_SOFT = 20,
-	TYPE_DARK_SOFT_20S		/* 21 */,
-	TYPE_DARK_SOFT_30S		/* 21 */,
-	TYPE_DARK_SOFT_1MIN		/* 22 */,
-	TYPE_DARK_SOFT_2MIN		/* 23 */,
-	TYPE_DARK_SOFT_5MIN		/* 24 */,
-	TYPE_DARK_SOFT_10MIN	/* 25 */,
-	TYPE_DARK_SOFT_15MIN	/* 26 */,
-	TYPE_DARK_SOFT_30MIN	/* 27 */,
-	TYPE_DARK_SOFT_1H 		/* 28 */,
-	TYPE_DARK_SOFT_INVAL	/* 29 */,
+	TYPE_DARK_SOFT_20S	/* 21 */,
+	TYPE_DARK_SOFT_30S	/* 22 */,
+	TYPE_DARK_SOFT_1MIN	/* 23 */,
+	TYPE_DARK_SOFT_2MIN	/* 24 */,
+	TYPE_DARK_SOFT_5MIN	/* 25 */,
+	TYPE_DARK_SOFT_10MIN	/* 26 */,
+	TYPE_DARK_SOFT_15MIN	/* 27 */,
+	TYPE_DARK_SOFT_30MIN	/* 28 */,
+	TYPE_DARK_SOFT_1H 	/* 29 */,
 	/** Timer on darkness with blinking off per time */
 	TYPE_DARK_BLINK = 30,
-	TYPE_DARK_BLINK_30S		/* 31 */,
+	TYPE_DARK_BLINK_30S	/* 31 */,
 	TYPE_DARK_BLINK_1MIN	/* 32 */,
 	TYPE_DARK_BLINK_2MIN	/* 33 */,
 	TYPE_DARK_BLINK_5MIN	/* 34 */,
@@ -171,10 +170,13 @@ class SwitchHandler
 		bool switchLevelStep(union pio dst, uint8_t level);
 		bool setPio(union pio dst, uint8_t adr[8], uint8_t d, enum _pio_mode state);
 		bool setLevel(union pio dst, uint8_t adr[8], uint8_t* d, uint8_t id, uint8_t level);
+		bool checkDev(union pio dst);
+		uint16_t getLen(uint8_t max, uint16_t elSize);
 	public:
 		uint8_t mode;
 		uint8_t light_thr;
 		uint8_t dim_on_lvl;
+		uint8_t tbl_vers;
 		SwitchHandler();
 		SwitchHandler(OwDevices* devs);
 		void status();
@@ -182,7 +184,7 @@ class SwitchHandler
 		void begin(OneWireBase *ow);
 		void loop();
 		void initSwTable();
-		void saveSwTable();
+		void saveSwTable(uint8_t vers_force);
 		bool alarmHandler(uint8_t busNr);
 		bool switchHandle(uint8_t busNr, uint8_t adr1);
 		bool switchHandle(uint8_t busNr, uint8_t adr1, uint8_t latch);

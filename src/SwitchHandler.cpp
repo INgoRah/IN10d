@@ -56,30 +56,70 @@ uint8_t SwitchHandler::bitnumber()
 	return 0xff;
 }
 
+extern byte pins;
 void SwitchHandler::initSwTable()
 {
-	uint16_t len, pos;
+	uint16_t len, pos, mylen;
 	uint8_t vers;
 
 	vers = eeprom_read_byte((const uint8_t*)0);
-	len = eeprom_read_word((const uint16_t*)2);
-	pos = 4;
+	if (vers > 2) {
+		//  0      1     2       3          4          5     6  7      8 ...
+		// vers | pos | mode | debug | ligthsensor | pins |  len    | tbl ... | ...
+		pos = eeprom_read_byte((const uint8_t*)1); // should be 6
+		mode = eeprom_read_byte((const uint8_t*)2);
+		debug = eeprom_read_byte((const uint8_t*)3);
+		light_sensor = eeprom_read_byte((const uint8_t*)4);
+		pins = eeprom_read_byte((const uint8_t*)5);
+	} else {
+		//  0      1     2    3     4 ...
+		// vers | res |   len    | tbl ... | ...
+		pos = 2;
+		mode = MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH;
+		debug = 1;
+		light_sensor = 1;
+		pins = 0xff;
+	}
+	len = eeprom_read_word((const uint16_t*)pos);
+	pos += 2;
+	if (len > sizeof(sw_tbl)) {
+		Serial.print(F("table exceed limit to "));
+		mylen = sizeof(sw_tbl) - 1;
+		Serial.println(mylen);
+	} else
+		mylen = len;
 	if (len != 0xFFFF && vers != 0xff) {
-#ifdef EXT_DEBUG
+#ifdef DEBUG
 		Serial.print(F(" vers="));
 		Serial.print(vers);
+		Serial.print(F(" tbl@"));
+		Serial.print(pos);
 		Serial.print(F(" len="));
 		Serial.print(len);
+		Serial.print(F(" / Max "));
+		Serial.print((uint16_t)sizeof(sw_tbl));
+
 #endif
-		if (vers == 2)
-			eeprom_read_block((void*)sw_tbl, (const void*)pos, len);
+		eeprom_read_block((void*)sw_tbl, (const void*)pos, mylen);
 	}
+	/* read next (timer) table*/
 	pos += len;
 	vers = eeprom_read_byte((const uint8_t*)pos);
+	if (pos % 2 != 0) {
+		Serial.println(F("unaligned"));
+	}
 	len = eeprom_read_word((const uint16_t*)(pos + 2));
+	if (len > sizeof(timed_tbl)) {
+		Serial.print(F("tim table exceed, limit to "));
+		mylen = sizeof(timed_tbl) - 1;
+		Serial.println(mylen);
+	} else
+		mylen = len;
 	pos += 4;
 	if (len != 0xFFFF && vers != 0xff) {
-#ifdef EXT_DEBUG
+#ifdef DEBUG
+		Serial.print(F(" timed@"));
+		Serial.print(pos);
 		Serial.print(F(" timed vers="));
 		Serial.print(vers);
 		Serial.print(F(" len="));
@@ -89,59 +129,101 @@ void SwitchHandler::initSwTable()
 #endif
 		if (len > sizeof(timed_tbl))
 			len = sizeof(timed_tbl);
-		if (vers == 1) {
-			/* vers 2 added a type (8 bit) */
-			struct _sw_tbl tmp[MAX_TIMED_SWITCH];
-			eeprom_read_block((void*)tmp, (const void*)pos, sizeof(tmp));
-			for (uint8_t i = 0; i < MAX_TIMED_SWITCH; i++) {
-				timed_tbl[i].src.data = tmp[i].src.data;
-				timed_tbl[i].dst.data = tmp[i].dst.data;
-				timed_tbl[i].type = TYPE_DARK_SOFT_30S;
-			}
-		} else
-			eeprom_read_block((void*)timed_tbl, (const void*)pos, len);
+		eeprom_read_block((void*)timed_tbl, (const void*)pos, mylen);
 	}
-#ifdef EXT_DEBUG
+	vers = eeprom_read_byte((const uint8_t*)0);
+	if (vers > 2 && len != 0xffff) {
+		pos += len;
+		vers = eeprom_read_byte((const uint8_t*)pos);
+		pos += 2;
+		if (pos % 2 != 0) {
+			Serial.println(F("unaligned"));
+		}
+		len = eeprom_read_word((const uint16_t*)pos);
+#ifdef DEBUG
+		Serial.print(F(" 16bit@"));
+		Serial.print(pos);
+		Serial.print(F(" vers="));
+		Serial.print(vers);
+		Serial.print(F(" len="));
+		Serial.print(len);
+		Serial.print(F(" / Max 0 "));
+#endif
+	}
+#ifdef DEBUG
 	Serial.println();
 #endif
 }
 
-void SwitchHandler::saveSwTable()
+uint16_t SwitchHandler::getLen(uint8_t max, uint16_t elSize)
 {
-	uint16_t pos;
-	uint16_t sw_tbl_len = 0;
-	uint16_t sw_tim_len = 0;
-	byte i;
+	uint16_t len = 0, i;
 	union d_adr_8 dst;
 	union s_adr src;
 
-	for (i = 0; i < MAX_SWITCHES; i++) {
+	for (i = 0; i < max; i++) {
 		src.data = sw_tbl[i].src.data;
 		dst.data = sw_tbl[i].dst.data;
 		if (src.data == 0 ||
 			(src.data == 0xffff && dst.data == 0xff))
 			continue;
-		sw_tbl_len += sizeof(struct _sw_tbl);
+		len += elSize;
 	}
-	for (i = 0; i < MAX_TIMED_SWITCH; i++) {
-		src.data = timed_tbl[i].src.data;
-		dst.data = timed_tbl[i].dst.data;
-		if ((src.data == 0 || dst.data == 0) ||
-			(src.data == 0xffff && dst.data == 0xff))
-			continue;
-		sw_tim_len += sizeof(struct _sw_tim_tbl);
-	}
-	eeprom_write_byte((uint8_t*)0, (uint8_t)2);
-	eeprom_write_word((uint16_t*)2, sw_tbl_len);
-	eeprom_write_block((const void*)sw_tbl, (void*)4, sw_tbl_len);
 
-	pos = 4 + sw_tbl_len;
+	return len;
+}
+
+void SwitchHandler::saveSwTable(uint8_t vers_force = 0)
+{
+	uint16_t pos = 6;
+	uint16_t sw_tbl_len = 0;
+	uint16_t sw_tim_len = 0;
+
+	sw_tbl_len = getLen(MAX_SWITCHES, sizeof(struct _sw_tbl));
+	sw_tim_len = getLen(MAX_TIMED_SWITCH, sizeof(struct _sw_tim_tbl));
+	Serial.println();
+	// set version
+	if (vers_force == 2) {
+		// force to vers 2
+		eeprom_update_byte((uint8_t*)0, (uint8_t)2);
+		eeprom_update_word((uint16_t*)2, sw_tbl_len);
+		eeprom_update_block((const void*)sw_tbl, (void*)4, sw_tbl_len);
+		//  0      1     2    3     4 ...
+		// vers | res |   len    | tbl ... | ...
+		pos = 4;
+	} else {
+		//  0      1     2       3          4          5     6  7      8 ...    8 + len  
+		// vers | pos | mode | debug | ligthsensor | pins |  len    | tbl ... | timver | timlen | timtbl ...
+		eeprom_update_byte((uint8_t*)0, (uint8_t)3);
+		eeprom_update_byte((uint8_t*)1, (uint8_t)6);
+		//  0      1     2       3          4          5      6 
+		// vers | pos | mode | debug | ligthsensor | pins |  len    | tbl ... | ...
+		eeprom_update_byte((uint8_t*)2, (uint8_t)mode);
+		eeprom_update_byte((uint8_t*)3, (uint8_t)debug);
+		eeprom_update_byte((uint8_t*)4, (uint8_t)light_sensor);
+		eeprom_update_byte((uint8_t*)5, (uint8_t)pins);
+		eeprom_update_word((uint16_t*)6, sw_tbl_len);
+		//pos += 2;
+		pos = 8;
+		eeprom_update_block((const void*)sw_tbl, (void*)8, sw_tbl_len);
+	}
+	/* write next (timer) table */
+	pos += sw_tbl_len;
 	/* timed table, version 2 ... */
-	eeprom_write_byte((uint8_t*)pos, (uint8_t)2);
+	eeprom_update_byte((uint8_t*)pos, (uint8_t)2);
 	pos += 2;
-	eeprom_write_word((uint16_t*)pos, sw_tim_len);
+	eeprom_update_word((uint16_t*)pos, sw_tim_len);
 	pos += 2;
-	eeprom_write_block((const void*)timed_tbl, (void*)pos, sw_tim_len);
+	eeprom_update_block((const void*)timed_tbl, (void*)pos, sw_tim_len);
+	pos += sw_tim_len;
+	if (vers_force != 2) {
+		/* 16 dst table, version 1 ... */
+		eeprom_update_byte((uint8_t*)pos, (uint8_t)1);
+		pos += 2;
+		eeprom_update_word((uint16_t*)pos, 3);
+		pos += 2;
+		eeprom_update_block((const void*)timed_tbl, (void*)pos, 3);
+	}
 #ifdef EXT_DEBUG
 	Serial.print(F("EEPROM saved, "));
 	Serial.print(pos + sw_tim_len);
@@ -152,7 +234,7 @@ void SwitchHandler::saveSwTable()
 
 void SwitchHandler::begin(OneWireBase *ow)
 {
-    this->ds = ow;
+	this->ds = ow;
 	mode = MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH;
 
 	initSwTable();
@@ -249,7 +331,7 @@ bool SwitchHandler::timerUpdate(union d_adr_8 dst, uint8_t typ)
 
 void SwitchHandler::status()
 {
-#ifdef DEBUG
+#ifdef EXT_DEBUG
 	for (int i = 0; i < MAX_TIMER; i++) {
 		struct _timer_item* tmr = &tmr_list[i];
 		Serial.print(F("timer #"));
@@ -434,6 +516,8 @@ uint16_t SwitchHandler::srcData(uint8_t busNr, uint8_t adr1)
 	src.sa.bus = busNr;
 	src.sa.adr =  adr1 & 0x3f;
 	// get (the first if multiple) bit which is set
+	// TODO returns 0xff if invalid -> check here
+	// or return immediately if cur_latch == 0
 	src.sa.latch = bitnumber();
 	v = getVersion(src.sa.bus, src.sa.adr);
 
@@ -625,6 +709,7 @@ bool SwitchHandler::setPio(union pio dst, uint8_t adr[8], uint8_t d, enum _pio_m
 				Serial.println(F(" ON"));
 		}
 #endif
+		/* TODO State TOGGLE not supported! */
 		if (state == OFF)
 			digitalWrite(pin, 1);
 		else
@@ -701,7 +786,7 @@ bool SwitchHandler::switchLevelStep(union pio dst, uint8_t level)
 	bool ret = false;
 
 	dst.da.type = getType(dst);
-	if (dst.da.type != 2) {
+	if (dst.da.type != TYPE_INTERN) {
 		_devs->adrGen(dst.da.bus, adr, dst.da.adr);
 		d = _devs->ds2408PioGet(dst.da.bus, adr);
 	}
@@ -715,7 +800,7 @@ bool SwitchHandler::switchLevelStep(union pio dst, uint8_t level)
 		else
 			ret = setPio (dst, adr, d, ON);
 	}
-	if (dst.da.type != 2)
+	if (dst.da.type != TYPE_INTERN)
 		// forced read back for cross check
 		d = _devs->ds2408PioGet(dst.da.bus, adr, true);
 	else
@@ -725,6 +810,17 @@ bool SwitchHandler::switchLevelStep(union pio dst, uint8_t level)
 	return ret;
 }
 
+/* TODO Implement checking for device existence */
+bool SwitchHandler::checkDev(union pio dst)
+{
+	(void)dst;
+#ifdef DEBUG
+	return false;
+#else
+	return true;
+#endif
+}
+
 bool SwitchHandler::initialStates()
 {
 	union pio p;
@@ -732,13 +828,17 @@ bool SwitchHandler::initialStates()
 	p.da.bus = 2;
 	p.da.adr = 7;
 	p.da.pio = 0;
-	p.da.type = getType(p);
-	wdt_reset();
-	switchLevelStep(p, 0);
-	p.da.bus = 3;
-	p.da.adr = 1;
-	wdt_reset();
-	switchLevelStep(p, 0);
+	if (checkDev(p)) {
+		p.da.type = getType(p);
+		wdt_reset();
+		switchLevelStep(p, 0);
+	}
+	if (checkDev(p)) {
+		p.da.bus = 3;
+		p.da.adr = 1;
+		wdt_reset();
+		switchLevelStep(p, 0);
+	}
 	return true;
 }
 
@@ -759,7 +859,7 @@ bool SwitchHandler::actorHandle(union d_adr_8 dst, enum _pio_mode state)
 	p.da.pio = dst.da.pio;
 	p.da.type = getType(p);
 
-	if (p.da.type != 2)
+	if (p.da.type != TYPE_INTERN)
 		d = dataRead(p, adr);
 	dim = dimLevel(p, &id);
 
@@ -821,6 +921,7 @@ bool SwitchHandler::switchHandle(uint8_t busNr, uint8_t adr1)
 	host.addEvent (SRC_CHANGE, src.data, data[0] | (data[1] << 8));
 
 	// todo: signal alarm only here once the data is available
+	//mode = MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH;
 	if ((mode & MODE_AUTO_SWITCH) == 0)
 		return false;
 	/* Timed handler: reset or start timer
@@ -945,6 +1046,7 @@ bool SwitchHandler::alarmHandler(uint8_t busNr)
 			}
 		}
 #endif
+		//mode = MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH;
 		if ((mode & MODE_ALRAM_HANDLING) == 0) {
 			// interrupt to host
 			digitalWrite (HOST_ALRM_PIN, LOW);
@@ -962,14 +1064,19 @@ bool SwitchHandler::alarmHandler(uint8_t busNr)
 #ifdef DEBUG
 				if (debug > 0) {
 					Serial.print(F(" = "));
-					Serial.println(cur_latch);
+					Serial.print(cur_latch, HEX);
+					Serial.print(F(" S="));
+					Serial.println(data[5], HEX);
 				}
 #endif
-				do {
+				while (cur_latch != 0 && to > 0) {
 					wdt_reset();
 					switchHandle(busNr, adr[1]);
 					to--;
-				} while (cur_latch != 0 && to > 0);
+				}
+			} else {
+				Serial.print(F("Inval RegRead ="));
+				Serial.println(res, HEX);
 			}
 		}
 		if (adr[0] == 0x28) {
