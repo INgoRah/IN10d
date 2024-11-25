@@ -17,6 +17,7 @@ class OwDevices
 	private:
 		OneWireBase *ow;
 		uint8_t	pio_data[MAX_BUS][MAX_ADR];
+		uint8_t dev_vers[MAX_BUS][MAX_ADR];
 
 	public:
 		OwDevices() {;}
@@ -30,10 +31,13 @@ class OwDevices
 		void toggleDs2413(byte bus, uint8_t* addr);
 		uint8_t ds2408PioGet(byte bus, uint8_t* addr, uint8_t force = 0);
 		uint8_t ds2408PioSet(byte bus, uint8_t* addr, uint8_t pio);
+		uint8_t ds2408xPinSet(byte bus, uint8_t* addr, uint8_t pio, uint8_t level, uint8_t cmd = 0xDD, uint8_t val = 0);
 		uint8_t ds2408TogglePio(byte bus, uint8_t* addr, uint8_t pio, uint8_t* data = NULL);
 		void ds2408CfgWrite(byte bus, byte adr[8], uint8_t* d, uint8_t len);
 		int ds2408CfgRead(byte bus, byte adr[8], uint8_t* data);
 		int16_t tempRead(byte busNr, byte addr[8], byte mode = 0, uint8_t* hum = NULL);
+		uint8_t getVersion(uint8_t bus, uint8_t id);
+		void versionUpdate(uint8_t bus, uint8_t id);
 };
 
 #endif

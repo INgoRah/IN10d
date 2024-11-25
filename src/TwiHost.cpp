@@ -209,9 +209,9 @@ void TwiHost::command()
 			dst.data = 0;
 			if (rxBytes < 4 && debug > 0) {
 #ifdef EXT_DEBUG
-				Serial.print("rx cnt=");
+				Serial.print(F("rx cnt="));
 				Serial.println(rxBytes);
-				Serial.print("avail=");
+				Serial.print(F("avail="));
 				Serial.println(Wire.available());
 				Serial.println(F("invalid"));
 #endif
@@ -337,7 +337,7 @@ void TwiHost::loop()
 	}
 	if (rxBytes > 0) {
 		/* should never happen */
-#ifdef DEBUG
+#ifdef EXT_DEBUG
 		if (debug > 0) {
 			Serial.print (F("Data not handled: "));
 			Serial.print (Wire.available());
@@ -461,7 +461,7 @@ void TwiHost::receiveEvent(int howMany) {
  		cmd 3 not yet handled, Stat  2 new 3
 		last ACK 4A != 4A
 		*/
-#ifdef DEBUG
+#ifdef EXT_DEBUG
 		if (debug > 0) {
 			Serial.print (F(" cmd "));
 			Serial.print (cmd);

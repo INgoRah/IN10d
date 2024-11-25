@@ -268,6 +268,7 @@ void CmdCli::funcPio(CmdParser *myParser)
 	union pio dst;
 
 	if (myParser->getParamCount() == 0) {
+		Serial.println(F("Cache and Version update"));
 		ow->cacheInit();
 		return;
 	}
@@ -307,7 +308,9 @@ void CmdCli::funcPin(CmdParser *myParser)
 		Serial.println(F("bus adr pio type time level"));
 		return;
 	}
-	byte adr[8], crc1, crc2;
+	byte adr[8];
+	uint16_t crc;
+
 	byte data[5] = { 0xC5, type, curPio, pio_tmr, level };
 	Serial.print(F("Timed PIO "));
 	Serial.print(pio_tmr, HEX);
@@ -322,19 +325,12 @@ void CmdCli::funcPin(CmdParser *myParser)
 		Serial.print(F(" "));
 		Serial.print(data[i], HEX);
 	}
-	/*ds->write(0xC5); // timer command
-	ds->write(type); // type
-	ds->write(curPio); // channel, pin and feature
-	ds->write(pio_tmr); // val1
-	ds->write(level * 63 / 100); // val2, FC max
-	*/
-	crc1 = ds->read();
-	crc2 = ds->read();
-	Serial.print(F(" -> "));
-	Serial.print(crc2, HEX);
-	Serial.print(crc1, HEX);
-	// TODO check crc: crc16 = crc2 << 8 | crc1;
-	Serial.println();
+	crc = ds->read();
+	crc |= ds->read() << 8;
+	uint16_t crc16 = ds->crc16(data, 5, 0);
+	Serial.print(crc, HEX);
+	Serial.print(F(" calc="));
+	Serial.println(~crc16, HEX);
 }
 
 void CmdCli::funcTemp(CmdParser *myParser)

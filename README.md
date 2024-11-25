@@ -165,15 +165,39 @@ sw t <timer type> <bus> <adr> <latch> <dst bus> <dst adr> <dst pio> [type]
 
 
 start:
-pin 0 4 0 30 1 230
+pin 0 2 0 20 1 230
+pin 2 7 0 20 1 230
 pin 0 4 5 40 2 90
 stop
-pin 0 4 0 eb 0 0
-pin 0 4 0 ee 0 0
-brightness
-pin 0 4 0 e3 129 0
-threshold
-pin 0 4 0 e5 e0 0
+pin 0 2 0 eb 0 0
+pin 0 2 0 ee 0 0
+on
+pin 2 7 0 DD 0 230
+off
+pin 2 7 0 EB 0 0
 
-pin 0 4 2 44 0 0
-cfg 4 w 1 20 10 1 1 0 0 0 0 0 31 0 0
+brightness
+pin 2 7 0 e3 150 0
+pin 0 2 0 e3 120 0
+
+threshold
+pin 2 7 0 e5 120 0
+
+pin 0 2 2 44 0 0
+cfg 4 w 1 70 10 1 1 0 31 0 0 0 1 0 0
+
+cfg 7 w ff ff ff ff 20 ff ff ff ff ff ff 23 02 00 00 ff ff ff ff FC
+cfg 7 w 1 90 20 0 5 2 2 0 21 0 0 0 0 0 0
+
+        R |R |R |SW 1  2  3  4  5  6  7 |CFG 1 2  3  4  5  6  7 |FEA|OFF|MAJ|MIN|TYP
+cfg 2 w F8 FF FF FF FF FF FF FF FF 20 FF 23 21 21 21 21 10 10 10
+        T|TH|DD|DU|DF|T1|T2|SW 1  2  3  4  5  6  7 
+cfg 2 w 1 90 10 00 0C 03 01 ff ff ff FF FF FF FF 21 FF FF FF FF
+cfg 2 w 1
+cfg 2
+
+
+cfg 7 w 1
+        T|TH|DD|DU|DF|T1|T2|SW 1  2  3  4  5  6  7 
+cfg 7 w 1 40 10 00 0A 01 01 FF 21 FF FF FF FF FF FF FF FF FF FF FF FF
+p 2 7 0 30

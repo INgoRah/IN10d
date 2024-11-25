@@ -5,10 +5,13 @@ Pressing a button to permanently switch on light is not working setting level = 
 
 [ ] Separate latch (input) and switch (output) to send two message in case
 of auto, switch table or host controlled switch  
-[ ] (ongoing) Timer based on light with configurable threshold  
+[ ] (ongoing) Timer based on light with configurable threshold
+    - update brightness on change to slaves 2.7 and 0.2
 [ ] Custom timer time per switch  
 [ ] (ongoing) Host IF for status read  
 [ ] Light independed timed switch. Currently timed switches only if dark  
+[ ] Support 16 bit destination address for all PIOs
+[ ] Support timed switch from host
 
 # PICO Support
 
