@@ -144,14 +144,13 @@ void setup() {
 	//digitalWrite(3, 1);
 	//pinMode(3, OUTPUT);
 	delay (10);
-	debug = 0;
 	// host.onCommand(hostCommand);
 	host.begin (HOST_SLAVE_ADR);
 #ifdef EXT_DEBUG
 	wdFired = 0;
 #endif
 	ow.begin(ds);
-	//Wire.setWireTimeout(250, true);
+	// reads also mode and debug
 	swHdl.begin(ds);
 	if (pins & 0x1)
 		pinMode(4, INPUT_PULLUP);
@@ -192,15 +191,10 @@ void setup() {
 	// poll as soon as possible
 	alarmPolling = 0;
 	host.addEvent (SYS_START, 0, 9, 0);
-	if (light_sensor) {
-		// init light
-		light = analogRead(A6);
-		ADCSRA = 0;
-		light = (light >> 2) & 0xFE;
-	}
+	check_light();
 }
 
-#if 1
+#if 0
 ISR(WDT_vect, ISR_NAKED)
 {
 	uint8_t *upStack;
@@ -311,15 +305,52 @@ static void ledBlink()
 static void check_light()
 {
 	uint16_t t;
+	uint8_t adr[8];
 
-	ADCSRA = (1<<ADPS2) | (1<<ADPS1) | (1<<ADEN);
-	_delay_us (150);
-	t = analogRead(A6);
-	ADCSRA = 0;
-	t = (t >> 2) & 0xFE;
+	if (light_sensor) {
+		ADCSRA = (1<<ADPS2) | (1<<ADPS1) | (1<<ADEN);
+		_delay_us (150);
+		t = analogRead(A6);
+		ADCSRA = 0;
+		// filter out minor change
+		t = (t >> 2) & 0xFC;
+	} else if (ow.getVersion(0,2) > 6) {
+		uint8_t data[10];
+
+		ow.adrGen(0, adr, 2);
+		/*ds->write(0xC5); // timer command
+		ds->write(cmd); // type
+		ds->write(Pio); // channel, pin and feature
+		ds->write(tmr); // val1
+		ds->write(level); // val2, FC max
+		*/
+		// bus, adr, pio, level, cmd, val
+		ow.ds2408xPinSet(0, adr, 0, 0, 0x44, 0);
+		// lets give the conversion some time
+		delay(1);
+		ow.ds2408RegRead(0, adr, data);
+		t = data[7] & 0xFC;
+		if (debug > 1) {
+			Serial.print(F(" light="));
+			Serial.println(t);
+		}
+	} else
+		return;
+
+	// average the last 4 measurements
+	t = (3 * light + t) / 4;
 	if (light != t) {
-		light = (4 * light + t) / 5;
+		light = t;
 		host.addEvent (TYPE_BRIGHTNESS, 0, 9, light);
+		if (ow.getVersion(2,7) > 6) {
+			// inform 2.7
+			ow.adrGen(2, adr, 7);
+			if (debug > 1) {
+				Serial.print(F(" update 2.7 light="));
+				Serial.println(light);
+			}
+			ow.ds2408xPinSet(2, adr, 0, 0, 0xE3, light);
+		}
 	}
 }
 
@@ -349,13 +380,14 @@ void light_loop()
 	sec_time = millis();
 	if (sec++ == 60) {
 		sec = 0;
-		if (light_sensor)
-			check_light();
 		if (min++ == 60) {
 			min = 0;
 			if (hour++ == 24)
 				hour = 0;
 		}
+		// check brightness every 10 mins
+		if ((min % 10) == 0)
+			check_light();
 	}
 }
 

@@ -50,8 +50,10 @@ void OwDevices::begin(OneWireBase *ds)
 	ow->configureDev(DS2482_CONFIG_APU);
 	for (int i = 0; i < MAX_BUS; i++) {
 		// search devs
-		for (int j = 0; j < MAX_ADR; j++)
+		for (int j = 0; j < MAX_ADR; j++) {
 			pio_data[i][j] = 0xff;
+			dev_vers[i][j] = 0;
+		}
 	}
 }
 
@@ -69,9 +71,14 @@ void OwDevices::cacheInit()
 			wdt_reset();
 			if (adr[0] == 0x29) {
 				ds2408PioGet(i, adr, true);
+				dev_vers[i][adr[1]] = 3;
 			}
 		}
 	}
+	versionUpdate(2, 7);
+	versionUpdate(0, 8);
+	versionUpdate(0, 1);
+	versionUpdate(0, 2);
 }
 
 void OwDevices::adrGen(uint8_t bus, uint8_t adr[8], uint8_t id)
@@ -87,6 +94,33 @@ void OwDevices::adrGen(uint8_t bus, uint8_t adr[8], uint8_t id)
 	adr[5] = 0x66;
 	adr[6] = 0x77;
 	adr[7] = ow->crc8 (adr, 7);
+}
+
+/* version 2 does not support long press detection
+   version 7 supports own timer a dimming  via spécial 
+   command C5 */
+uint8_t OwDevices::getVersion(uint8_t bus, uint8_t id)
+{
+	return dev_vers[bus][id];
+}
+
+void OwDevices::versionUpdate(uint8_t bus, uint8_t id)
+{
+	byte adr[8], _data[MAX_CFG_SIZE];
+
+	if (dev_vers[bus][id] == 0)
+		/* not found */
+		return;
+	adrGen(bus, adr, id);
+	ds2408CfgRead(bus, adr, _data);
+	dev_vers[bus][id] = _data[22];
+	if (debug > 1) {
+		Serial.print(bus);
+		Serial.print(".");
+		Serial.print(id);
+		Serial.print(F(" version = "));
+		Serial.println(dev_vers[bus][id]);
+	}
 }
 
 /* requires bus selected already before */
@@ -315,7 +349,7 @@ uint8_t OwDevices::ds2408PioSet(byte bus, uint8_t* addr, uint8_t pio)
 		delay(5);
 	} while (--retry > 0);
 	// if err && retry > 0: err = 0
-#ifdef DEBUG
+#ifdef EXT_DEBUG
 	if ((err && retry == 0) || (err && debug > 0)) {
 		log_time();
 		Serial.print(F("PioSet "));
@@ -342,6 +376,49 @@ uint8_t OwDevices::ds2408PioSet(byte bus, uint8_t* addr, uint8_t pio)
 	}
 	return r;
 #endif
+}
+
+
+uint8_t OwDevices::ds2408xPinSet(byte bus, uint8_t* addr, uint8_t pio, uint8_t level, uint8_t cmd, uint8_t val)
+{
+	byte data[5] = { 0xC5, cmd, pio, val, level };
+	uint16_t crc;
+	bool ret;
+
+	wdt_reset();
+	/* if setting any level, a level 0 means stop */
+	if (level == 0 && cmd == 0xDD)
+		/* dim down */
+		data[1] = 0xEB;
+	ret = ow->selectChannel(bus);
+	if (ret)
+		ret = ow->reset();
+	if (ret)
+		ow->select(addr);
+	for (int i = 0; i < 5; i++) {
+		if (debug > 2) {
+			Serial.print(F(" "));
+			Serial.print(data[i], HEX);
+		}
+		ow->write(data[i]);
+		if (ow->last_err != 0)
+			break;
+	}
+	//if (ow->last_err == 0)
+	// lets try a pseudo read at least to avoid
+	// a hung dev
+	crc = ow->read();
+	crc |= ow->read() << 8;
+	uint16_t crc16 = ow->crc16(data, 5, 0);
+	if (debug > 2)
+		Serial.println(crc, HEX);
+	if (crc == ~crc16)
+		return 0xAA;
+
+	Serial.print(F("CRC mismatch calc="));
+	Serial.println(~crc16, HEX);
+	
+	return 0xff;
 }
 
 /* reads and returns the Output latch state register

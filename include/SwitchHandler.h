@@ -170,7 +170,6 @@ class SwitchHandler
 		bool switchLevelStep(union pio dst, uint8_t level);
 		bool setPio(union pio dst, uint8_t adr[8], uint8_t d, enum _pio_mode state);
 		bool setLevel(union pio dst, uint8_t adr[8], uint8_t* d, uint8_t id, uint8_t level);
-		bool checkDev(union pio dst);
 		uint16_t getLen(uint8_t max, uint16_t elSize);
 	public:
 		uint8_t mode;
