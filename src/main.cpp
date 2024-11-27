@@ -119,7 +119,7 @@ uint8_t *hostBuf = NULL;
 static void ledBlink();
 unsigned long ledOnTime = 0;
 #endif
-static void check_light();
+static void check_light(byte mode);
 void light_loop();
 void pin_loop();
 void alarm_loop();
@@ -191,7 +191,9 @@ void setup() {
 	// poll as soon as possible
 	alarmPolling = 0;
 	host.addEvent (SYS_START, 0, 9, 0);
-	check_light();
+	check_light(0);
+	delay(500);
+	check_light(1);
 }
 
 #if 0
@@ -302,58 +304,6 @@ static void ledBlink()
 }
 #endif
 
-static void check_light()
-{
-	uint16_t t;
-	uint8_t adr[8];
-
-	if (light_sensor) {
-		ADCSRA = (1<<ADPS2) | (1<<ADPS1) | (1<<ADEN);
-		_delay_us (150);
-		t = analogRead(A6);
-		ADCSRA = 0;
-		// filter out minor change
-		t = (t >> 2) & 0xFC;
-	} else if (ow.getVersion(0,2) > 6) {
-		uint8_t data[10];
-
-		ow.adrGen(0, adr, 2);
-		/*ds->write(0xC5); // timer command
-		ds->write(cmd); // type
-		ds->write(Pio); // channel, pin and feature
-		ds->write(tmr); // val1
-		ds->write(level); // val2, FC max
-		*/
-		// bus, adr, pio, level, cmd, val
-		ow.ds2408xPinSet(0, adr, 0, 0, 0x44, 0);
-		// lets give the conversion some time
-		delay(1);
-		ow.ds2408RegRead(0, adr, data);
-		t = data[7] & 0xFC;
-		if (debug > 1) {
-			Serial.print(F(" light="));
-			Serial.println(t);
-		}
-	} else
-		return;
-
-	// average the last 4 measurements
-	t = (3 * light + t) / 4;
-	if (light != t) {
-		light = t;
-		host.addEvent (TYPE_BRIGHTNESS, 0, 9, light);
-		if (ow.getVersion(2,7) > 6) {
-			// inform 2.7
-			ow.adrGen(2, adr, 7);
-			if (debug > 1) {
-				Serial.print(F(" update 2.7 light="));
-				Serial.println(light);
-			}
-			ow.ds2408xPinSet(2, adr, 0, 0, 0xE3, light);
-		}
-	}
-}
-
 void dumpCfg()
 {
 	Serial.print(F(" mode="));
@@ -370,14 +320,61 @@ void dumpCfg()
 	Serial.print(light);
 }
 
+static void check_light(byte mode)
+{
+	uint16_t t;
+	uint8_t adr[8];
+
+	if (light_sensor) {
+		ADCSRA = (1<<ADPS2) | (1<<ADPS1) | (1<<ADEN);
+		_delay_us (150);
+		t = analogRead(A6);
+		ADCSRA = 0;
+		// filter out minor change
+	} else if (ow.getVersion(0,2) > 7) {
+		adr[0] = 0x20;
+		ow.adrGen(0, adr, 2);
+		t = ow.adcRead(0, adr, 1, mode);
+		if (mode == 0)
+			// just start conversion
+			return;
+	} else
+		return;
+
+	// filter out minor change
+	t = (t >> 2) & 0xFC;
+	// average the last 4 measurements
+	t = (3 * light + t) / 4;
+	if (light != t) {
+		light = t;
+		if (ow.getVersion(2,7) > 6) {
+			// inform 2.7
+			adr[0] = 0x29;
+			ow.adrGen(2, adr, 7);
+			if (debug > 3) {
+				Serial.print(F(" update light="));
+				Serial.println(light);
+			}
+			ow.ds2408xPinSet(2, adr, 0, 0, 0xE3, light);
+		}
+		host.addEvent (TYPE_BRIGHTNESS, 0, 9, light);
+	}
+}
+
 void light_loop()
 {
 	static unsigned long sec_time = 0;
+	static uint8_t mode = 0;
 
 	if ((millis() - sec_time) < 1000)
 		return;
 
 	sec_time = millis();
+	if (mode == 1 && sec == 2) {
+		/* next second read out conversion results */
+		check_light(1);
+		mode = 0;
+	}
 	if (sec++ == 60) {
 		sec = 0;
 		if (min++ == 60) {
@@ -386,8 +383,10 @@ void light_loop()
 				hour = 0;
 		}
 		// check brightness every 10 mins
-		if ((min % 10) == 0)
-			check_light();
+		if ((min % 5) == 0) {
+			check_light(0);
+			mode = 1;
+		}
 	}
 }
 

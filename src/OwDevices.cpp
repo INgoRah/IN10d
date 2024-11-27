@@ -87,7 +87,7 @@ void OwDevices::adrGen(uint8_t bus, uint8_t adr[8], uint8_t id)
 	adr[2] = bus;
 	adr[3] = (uint8_t)~id;
 	adr[4] = (uint8_t)~bus;
-	if (adr[0] != 0x28) {
+	if (adr[0] != 0x28 && adr[0] != 0x20) {
 		/* set me up */
 		adr[0] = 0x29; // type
 	}
@@ -547,4 +547,40 @@ int16_t OwDevices::tempRead(byte busNr, byte addr[8], byte mode, uint8_t* hum)
 		*hum = scratchPad[5];
 
 	return raw;
+}
+
+int16_t OwDevices::adcRead(byte busNr, byte addr[8], byte ch, byte mode)
+{
+	bool ret;
+	uint16_t crc, dat[4];
+
+	ret = ow->selectChannel(busNr);
+	if (!ret)
+		return -1;
+	ow->reset();
+	ow->select(addr);
+	if (mode == 0) {
+		ow->write(0x3c);
+		ow->write(ch);
+		// clear all
+		ow->write(0x55);
+		crc = ow->read();
+		crc |= ow->read() << 8;
+		return 0;
+	}
+	ow->write(0xAA);
+	ow->write(0x0);
+	ow->write(0x0);
+	for (byte i = 0; i < 4; i++) {
+		dat[i] = ow->read();
+		dat[i] |= ow->read() << 8;
+		if (debug > 4) {
+			Serial.print(F(" "));
+			Serial.println(dat[i], HEX);
+		}
+	}
+	crc = ow->read();
+	crc |= ow->read() << 8;
+
+	return dat[ch - 1];
 }
