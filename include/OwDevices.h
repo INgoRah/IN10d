@@ -36,6 +36,8 @@ class OwDevices
 		void ds2408CfgWrite(byte bus, byte adr[8], uint8_t* d, uint8_t len);
 		int ds2408CfgRead(byte bus, byte adr[8], uint8_t* data);
 		int16_t tempRead(byte busNr, byte addr[8], byte mode = 0, uint8_t* hum = NULL);
+		int16_t adcRead(byte busNr, byte addr[8], byte ch, byte mode = 0);
+
 		uint8_t getVersion(uint8_t bus, uint8_t id);
 		void versionUpdate(uint8_t bus, uint8_t id);
 };

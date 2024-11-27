@@ -227,7 +227,7 @@ void TwiHost::command()
 				host.setStatus(STAT_FAIL);
 				return;
 			}
-			if (dst.da.bus == 0 && dst.da.adr == 9)
+			if (dst.da.bus == 0 && dst.da.adr == 0)
 				dst.da.type = 2;
 			else
 				dst.da.type = 0;

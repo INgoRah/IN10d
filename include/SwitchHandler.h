@@ -164,7 +164,9 @@ class SwitchHandler
 		uint8_t getType(union pio dst);
 		uint8_t bitnumber();
 		bool timerUpdate(union d_adr_8 dst, uint8_t typ);
+#ifdef SOFTOFF_SUPPORT
 		uint8_t dimDown(struct _timer_item* tmr);
+#endif
 		uint8_t dimLevel(union pio dst, uint8_t* id);
 		uint8_t dimLevel(union d_adr_8 dst, uint8_t* id);
 		bool switchLevelStep(union pio dst, uint8_t level);

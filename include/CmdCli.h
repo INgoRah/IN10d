@@ -5,7 +5,7 @@
 #include <CmdParser.hpp>
 #include "OwDevices.h"
 
-#define CLI_NR_BASE 10
+#define CLI_NR_BASE 11
 #ifdef EXT_DEBUG
 #define CLI_NR CLI_NR_BASE + 2
 #else
@@ -34,6 +34,7 @@ class CmdCli
 		static void funcTemp(CmdParser *myParser); /* 9 */
 		static void funcLog(CmdParser *myParser); /* 10 */
 		static void funcPin(CmdParser *myParser); /* 11 */
+		static void funcAdc(CmdParser *myParser); /* 12 */
 #ifdef CHGID_CMD
 		static void funcChgId(CmdParser *myParser); /* 11 */
 #endif

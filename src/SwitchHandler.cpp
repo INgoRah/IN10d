@@ -84,15 +84,15 @@ void SwitchHandler::initSwTable()
 	len = eeprom_read_word((const uint16_t*)pos);
 	pos += 2;
 	if (len > sizeof(sw_tbl)) {
-		Serial.print(F("table exceed limit to "));
+		//Serial.print(F("table exceed limit to "));
 		mylen = sizeof(sw_tbl) - 1;
 		Serial.println(mylen);
 	} else
 		mylen = len;
 	if (len != 0xFFFF && vers != 0xff) {
 #ifdef DEBUG
-		Serial.print(F(" vers="));
-		Serial.print(vers);
+		/*Serial.print(F(" vers="));
+		Serial.print(vers);*/
 		Serial.print(F(" tbl@"));
 		Serial.print(pos);
 		Serial.print(F(" len="));
@@ -111,7 +111,7 @@ void SwitchHandler::initSwTable()
 	}
 	len = eeprom_read_word((const uint16_t*)(pos + 2));
 	if (len > sizeof(timed_tbl)) {
-		Serial.print(F("tim table exceed, limit to "));
+		//Serial.print(F("tim table exceed, limit to "));
 		mylen = sizeof(timed_tbl) - 1;
 		Serial.println(mylen);
 	} else
@@ -121,8 +121,8 @@ void SwitchHandler::initSwTable()
 #ifdef DEBUG
 		Serial.print(F(" timed@"));
 		Serial.print(pos);
-		Serial.print(F(" timed vers="));
-		Serial.print(vers);
+		/*Serial.print(F(" timed vers="));
+		Serial.print(vers);*/
 		Serial.print(F(" len="));
 		Serial.print(len);
 		Serial.print(F(" / Max "));
@@ -246,7 +246,7 @@ void SwitchHandler::begin(OneWireBase *ow)
 	dim_tbl[0].dst.da.adr = 7;
 	/* dimmer 2 / stairs UG, this is our own pin */
 	dim_tbl[1].dst.da.bus = 0;
-	dim_tbl[1].dst.da.adr = 9;
+	dim_tbl[1].dst.da.adr = 2;
 	dim_tbl[1].dst.da.pio = 0;
 #if 0
 	/* dimmer 3 */
@@ -303,8 +303,10 @@ bool SwitchHandler::timerUpdate(union d_adr_8 dst, uint8_t typ)
 			tmr->secs = secs;
 			/* set the base type */
 			tmr->base_type = typ - t;
+#ifdef SOFTOFF_SUPPORT
 			if (tmr->base_type == TYPE_DARK_SOFT)
 				dimLevel(dst, &tmr->id);
+#endif
 			tmr->dst.data = dst.data;
 			tmr->ms = millis();
 #ifdef EXT_DEBUG
@@ -339,6 +341,7 @@ void SwitchHandler::status()
 #endif
 }
 
+#ifdef SOFTOFF_SUPPORT
 /* Would be nice to suppress the logs here */
 uint8_t SwitchHandler::dimDown(struct _timer_item* tmr)
 {
@@ -353,7 +356,7 @@ uint8_t SwitchHandler::dimDown(struct _timer_item* tmr)
 
 	if (level > 0)
 		level--;
-	if (p.da.adr == 9 && p.da.bus == 0) {
+	if (p.da.adr == 0 && p.da.bus == 0) {
 		analogWrite(5, level * 4);
 		d = level * 4;
 	}
@@ -373,6 +376,7 @@ uint8_t SwitchHandler::dimDown(struct _timer_item* tmr)
 
 	return level;
 }
+#endif /* SOFTOFF_SUPPORT */
 
 /**
  * Responsible for timer handling and dimming down if required
@@ -395,8 +399,10 @@ void SwitchHandler::loop()
 			if (tmr->secs == 0)
 				/* nothing to do */
 				continue;
+#ifdef SOFTOFF_SUPPORT
 			else
 				dimDown(tmr);
+#endif
 			continue;
 		}
 		/* this is the off state handling, timer expired */
@@ -411,16 +417,20 @@ void SwitchHandler::loop()
 			// off state, could be soft off
 			tmr->ms = 0;
 			/* not yet off, dimming or blinking? */
+#ifdef SOFTOFF_SUPPORT
 			if (tmr->base_type == TYPE_DARK_SOFT) {
 				dimDown(tmr);
 				host.addEvent (tmr->dst, 255, DIMMING_DOWN);
 			}
 			else {
+#endif
 				/* final off stop timer */
 				tmr->secs  = 0;
 				/* action with dst */
 				actorHandle(tmr->dst, OFF);
+#ifdef SOFTOFF_SUPPORT
 			}
+#endif
 		}
 	}
 }
@@ -540,7 +550,7 @@ uint8_t SwitchHandler::dimStage(uint8_t dim)
 
 uint8_t SwitchHandler::getType(union pio dst)
 {
-	if (dst.da.bus == 0 && dst.da.adr == 9) {
+	if (dst.da.bus == 0 && dst.da.adr == 0) {
 		return 2;
 	}
 	return 0;
@@ -577,7 +587,6 @@ uint8_t SwitchHandler::dataRead(union pio dst, uint8_t adr[8])
  */
 bool SwitchHandler::setLevel(union pio dst, uint8_t adr[8], uint8_t* d, uint8_t id, uint8_t level)
 {
-	uint8_t v;
 #ifdef DEBUG
 	if (debug > 1) {
 		printDst(dst);
@@ -588,13 +597,19 @@ bool SwitchHandler::setLevel(union pio dst, uint8_t adr[8], uint8_t* d, uint8_t 
 	switch (dst.da.type) {
 	case TYPE_DS29X:
 	default:
+#if 1
+		uint8_t v;
 		v = _devs->getVersion(dst.da.bus, dst.da.adr);
 		if (v > 6) {
-			if (level != 0)
-				level = level * 4 + 3;
-			if (_devs->ds2408xPinSet(dst.da.bus, adr, dst.da.pio, level) != 0xAA)
-				return false;
-		} else {
+#endif
+		if (level != 0)
+			level = level * 4 + 3;
+		if (_devs->ds2408xPinSet(dst.da.bus, adr, dst.da.pio, level) != 0xAA)
+			return false;
+#if 1
+		}
+		// not supporting older version anymore		
+		 else {
 			// clear level in data
 			*d &= 0x3;
 			if (level > 0)
@@ -603,9 +618,10 @@ bool SwitchHandler::setLevel(union pio dst, uint8_t adr[8], uint8_t* d, uint8_t 
 			if (_devs->ds2408PioSet(dst.da.bus, adr, *d) != 0xAA)
 				return false;
 		}
+#endif
 		break;
 	case TYPE_INTERN:
-		if (dst.da.bus == 0 && dst.da.adr == 9) {
+		if (dst.da.bus == 0 && dst.da.adr == 0) {
 			if (dst.da.pio == 0) {
 				// scale up 0..15 to 0..255
 				if (level > 62) {
@@ -676,16 +692,6 @@ bool SwitchHandler::setPio(union pio dst, uint8_t adr[8], uint8_t d, enum _pio_m
 				pin = 11;
 				break;
 		}
-#ifdef EXT_DEBUG
-		if (debug > 2) {
-			Serial.print(F(" pin "));
-			Serial.print(pin);
-			if (state == OFF)
-				Serial.println(F(" OFF"));
-			else
-				Serial.println(F(" ON"));
-		}
-#endif
 		/* TODO State TOGGLE not supported! */
 		if (state == OFF)
 			digitalWrite(pin, 1);
@@ -809,14 +815,7 @@ bool SwitchHandler::initialStates()
 		wdt_reset();
 		switchLevelStep(p, 0);
 	}
-#if 0
-	p.da.bus = 3;
-	p.da.adr = 1;
-	if (_devs->getVersion(2,7) != 0xff) {
-		wdt_reset();
-		switchLevelStep(p, 0);
-	}
-#endif
+
 	return true;
 }
 
@@ -951,7 +950,7 @@ bool SwitchHandler::switchHandle(uint8_t busNr, uint8_t adr1)
 	 */
 	for (i = 0; i < MAX_SWITCHES; i++) {
 		if (src.data == sw_tbl[i].src.data) {
-#ifdef EXT_DEBUG
+#ifdef DEBUG
 			if (debug > 2) {
 				Serial.print(F("switch #"));
 				Serial.print(i);

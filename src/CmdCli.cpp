@@ -142,6 +142,7 @@ void CmdCli::begin(OwDevices* devs)
 	cmdCallback.addCmd("sw", &funcSwCmd);	// 7
 	cmdCallback.addCmd("t", &funcTemp);		// 8
 	cmdCallback.addCmd("pin", &funcPin);		// 9
+	cmdCallback.addCmd("adc", &funcAdc);		// 10
 	//cmdCallback.addCmd("log", &funcLog);	// 10
 	//cmdCallback.addCmd("time", &funcTime);
 	//cmdCallback.addCmd("c", &funcCmd);		// 11
@@ -381,6 +382,39 @@ void CmdCli::funcTemp(CmdParser *myParser)
 	}
 	Serial.println();
 }
+
+void CmdCli::funcAdc(CmdParser *myParser)
+{
+	byte adr[8], ch = 1;
+	uint16_t adc;
+
+	if (myParser->getParamCount() > 1) {
+		curBus = atoi(myParser->getCmdParam(1));
+		curAdr = atoi(myParser->getCmdParam(2));
+	}
+	if (myParser->getParamCount() > 2)
+		ch = atoi(myParser->getCmdParam(3));
+	adr[0] = 0x20;
+	adr[1] = curAdr;
+	ow->adrGen(curBus, adr, adr[1]);
+#ifdef EXT_DEBUG
+	if (debug > 4) {
+		int i;
+		for (i = 0; i < 7; i++) {
+			Serial.print(adr[i], HEX);
+			Serial.write(' ');
+		}
+		Serial.println(adr[i], HEX);
+	}
+#endif
+	adc = ow->adcRead (curBus, adr, ch);
+	delay(400);
+	adc = ow->adcRead (curBus, adr, ch, 1);
+	Serial.print(F("ADC="));
+	Serial.print(adc);
+	Serial.println();
+}
+
 
 void CmdCli::funcMode(CmdParser *myParser)
 {
