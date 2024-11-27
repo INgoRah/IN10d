@@ -325,13 +325,16 @@ static void check_light(byte mode)
 	uint16_t t;
 	uint8_t adr[8];
 
+#ifdef INTERN_PIOS
 	if (light_sensor) {
 		ADCSRA = (1<<ADPS2) | (1<<ADPS1) | (1<<ADEN);
 		_delay_us (150);
 		t = analogRead(A6);
 		ADCSRA = 0;
 		// filter out minor change
-	} else if (ow.getVersion(0,2) > 7) {
+	} else
+#endif /* INTERN_PIOS */
+	if (ow.getVersion(0,2) > 7) {
 		adr[0] = 0x20;
 		ow.adrGen(0, adr, 2);
 		t = ow.adcRead(0, adr, 1, mode);
@@ -395,23 +398,21 @@ void pin_loop()
 	if (pinSignal == 0)
 		return;
 #ifdef DEBUG
-	if (debug > 3) {
+	if (debug > 4) {
 		Serial.print(F("PIN Signal: "));
 		Serial.println(pinSignal);
 	}
 #endif
 
+#ifdef INTERN_PIOS
 	// interrupt to host
 	if (pinSignal & 0x1 && pins & 0x1)
-		swHdl.switchHandle(0, 9, 1);
+		swHdl.switchHandle(0, 0, 1);
 	if (pinSignal & 0x2 && pins & 0x2)
-		swHdl.switchHandle(0, 9, 0x2);
+		swHdl.switchHandle(0, 0, 0x2);
 	if (pinSignal & 0x4 && pins & 0x4)
-		swHdl.switchHandle(0, 9, 0x4);
-#if 0
-	if (pinSignal & 0x4 )
-		swHdl.switchHandle(0, 9, 0x8);
-#endif
+		swHdl.switchHandle(0, 0, 0x4);
+#endif /* INTERN_PIOS */
 	if (pinSignal & 0x8 && pins & 0x8) {
 		pow_imp++;
 		host.addEvent (POWER_IMP, 0, 9, pow_imp);
@@ -424,11 +425,9 @@ void alarm_loop()
 	if (!alarmSignal)
 		return;
 	alarmPolling = millis();
-	//host.setAlarm();
 	/* the alarmhandler will set the alarm signal to the host
 		after the event data is prepared. Otherwise a host could
 		disturb our switching process */
-	//swHdl.mode = MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH;
 	if (swHdl.mode & MODE_ALRAM_HANDLING) {
 		byte retry;
 		for (byte i = 0; i < MAX_BUS; i++) {

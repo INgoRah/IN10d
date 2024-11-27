@@ -244,7 +244,7 @@ void SwitchHandler::begin(OneWireBase *ow)
 	/* dimmer 1 / stairs OG */
 	dim_tbl[0].dst.da.bus = 2;
 	dim_tbl[0].dst.da.adr = 7;
-	/* dimmer 2 / stairs UG, this is our own pin */
+	/* dimmer 2 / stairs UG */
 	dim_tbl[1].dst.da.bus = 0;
 	dim_tbl[1].dst.da.adr = 2;
 	dim_tbl[1].dst.da.pio = 0;
@@ -488,7 +488,7 @@ static struct _timer_item* timerItem(uint8_t data)
 uint16_t SwitchHandler::srcData(uint8_t busNr, uint8_t adr1)
 {
 	union s_adr src;
-	uint8_t v;
+	//uint8_t v;
 
 	src.data = 0;
 	src.sa.bus = busNr;
@@ -497,9 +497,9 @@ uint16_t SwitchHandler::srcData(uint8_t busNr, uint8_t adr1)
 	// TODO returns 0xff if invalid -> check here
 	// or return immediately if cur_latch == 0
 	src.sa.latch = bitnumber();
-	v = _devs->getVersion(src.sa.bus, src.sa.adr);
+	//v = _devs->getVersion(src.sa.bus, src.sa.adr);
 
-	if (v < 3 || data[6] == 0xff)
+	if (data[6] == 0xff)
 		src.sa.press = 0;
 	else {
 		/* first two latches are usually output
@@ -579,7 +579,7 @@ uint8_t SwitchHandler::dataRead(union pio dst, uint8_t adr[8])
  *
  * @param id id in dimLevel cache array
  * @param d data read from PIO before
- * @param level level [0..63] converted from percent to 6 bit (level = level * 64 / 100)
+ * @param level level [0..100] will be converted to 8 bit (0..254)
  * @return true if successful otherwise false on error
  *
  * @remark This function does not notify the host for any change. Needs to be done by the
@@ -591,7 +591,7 @@ bool SwitchHandler::setLevel(union pio dst, uint8_t adr[8], uint8_t* d, uint8_t 
 	if (debug > 1) {
 		printDst(dst);
 		Serial.print(F(" = "));
-		Serial.print(*d, HEX);
+		Serial.println(*d, HEX);
 	}
 #endif
 	switch (dst.da.type) {
@@ -603,7 +603,9 @@ bool SwitchHandler::setLevel(union pio dst, uint8_t adr[8], uint8_t* d, uint8_t 
 		if (v > 6) {
 #endif
 		if (level != 0)
-			level = level * 4 + 3;
+		/* convert from 1 .. 100 to
+		   1 .. 254 */
+		level = level / 100 * 254;
 		if (_devs->ds2408xPinSet(dst.da.bus, adr, dst.da.pio, level) != 0xAA)
 			return false;
 #if 0
@@ -620,6 +622,7 @@ bool SwitchHandler::setLevel(union pio dst, uint8_t adr[8], uint8_t* d, uint8_t 
 		}
 #endif
 		break;
+#ifdef INTERN_PIOS
 	case TYPE_INTERN:
 		if (dst.da.bus == 0 && dst.da.adr == 0) {
 			if (dst.da.pio == 0) {
@@ -632,6 +635,7 @@ bool SwitchHandler::setLevel(union pio dst, uint8_t adr[8], uint8_t* d, uint8_t 
 			}
 		}
 		break;
+#endif /* INTERN_PIOS */
 	}
 #ifdef DEBUG
 	if (debug > 1) {
@@ -661,10 +665,7 @@ bool SwitchHandler::setPio(union pio dst, uint8_t adr[8], uint8_t d, enum _pio_m
 {
 	uint8_t pio, r;
 
-#ifdef EXT_DEBUG
-	if (debug > 2)
-		printDst(dst);
-#endif
+#ifdef INTERN_PIOS
 	if (dst.da.type == TYPE_INTERN) {
 		/* special case: our own pin, is a dimmer, no need to handle here */
 		// PIO0: PWM on pin 5
@@ -692,16 +693,6 @@ bool SwitchHandler::setPio(union pio dst, uint8_t adr[8], uint8_t d, enum _pio_m
 				pin = 11;
 				break;
 		}
-#ifdef EXT_DEBUG
-		if (debug > 2) {
-			Serial.print(F(" pin "));
-			Serial.print(pin);
-			if (state == OFF)
-				Serial.println(F(" OFF"));
-			else
-				Serial.println(F(" ON"));
-		}
-#endif
 		/* TODO State TOGGLE not supported! */
 		if (state == OFF)
 			digitalWrite(pin, 1);
@@ -711,6 +702,7 @@ bool SwitchHandler::setPio(union pio dst, uint8_t adr[8], uint8_t d, enum _pio_m
 		host.addEvent (dst, (1 << pin));
 		return true;
 	}
+#endif /* INTERN_PIOS */
 	/* turn to bitmask (da.pio = 0,1,2 >> pio = 1,2,4) */
 	pio = 1 << dst.da.pio;
 
@@ -760,21 +752,10 @@ bool SwitchHandler::setPio(union pio dst, uint8_t adr[8], uint8_t d, enum _pio_m
  * Called from top level control to switch to a dedicated level or
  * simply on or off.
  * If set already it will ignore and return false
- * level 0 .. 100 will be translated in 16 stages. If level < 16
- *       directly switch off
+ * level 0 .. 100 will be translated in values from 0 .. 254 in the lower
+ * function. If level < 32 directly switch off for non PWM outputs
  * */
 bool SwitchHandler::switchLevel(union pio dst, uint8_t level)
-{
-	// TODO new devices will get a value 0..254
-	return switchLevelStep(dst, level * 63 / 100);
-}
-
-/**
- * Switch to a dedicated level by steps (0..63) or simply on or off.
- * If set already it will ignore and return false
- * level 0 .. 63 64 stages.
- * */
-bool SwitchHandler::switchLevelStep(union pio dst, uint8_t level)
 {
 	uint8_t adr[8], d, id;
 	bool ret = false;
@@ -815,7 +796,7 @@ bool SwitchHandler::initialStates()
 		p.da.pio = 0;
 		p.da.type = getType(p);
 		wdt_reset();
-		switchLevelStep(p, 0);
+		switchLevel(p, 0);
 	}
 	if (_devs->getVersion(0,2) != 0xff) {
 		p.da.bus = 0;
@@ -823,16 +804,9 @@ bool SwitchHandler::initialStates()
 		p.da.pio = 0;
 		p.da.type = getType(p);
 		wdt_reset();
-		switchLevelStep(p, 0);
+		switchLevel(p, 0);
 	}
-#if 0
-	p.da.bus = 3;
-	p.da.adr = 1;
-	if (_devs->getVersion(2,7) != 0xff) {
-		wdt_reset();
-		switchLevelStep(p, 0);
-	}
-#endif
+
 	return true;
 }
 
@@ -867,11 +841,13 @@ bool SwitchHandler::actorHandle(union d_adr_8 dst, enum _pio_mode state)
 		case TOGGLE:
 			// toggle level: off - 1 - 2 - off
 			dim = dimStage(dim);
+#ifdef SOFTOFF_SUPPORT
 			if (dim == 0){
-				timerUpdate(dst, TYPE_DARK_SOFT);
+				timerUpdate(dst, TYPE_DARK);
 				return true;
 			} else
-				ret = setLevel (p, adr, &d, id, dim);
+#endif
+			ret = setLevel (p, adr, &d, id, dim);
 			break;
 		case ON:
 			if (dim > 0) {
@@ -967,7 +943,7 @@ bool SwitchHandler::switchHandle(uint8_t busNr, uint8_t adr1)
 	 */
 	for (i = 0; i < MAX_SWITCHES; i++) {
 		if (src.data == sw_tbl[i].src.data) {
-#ifdef EXT_DEBUG
+#ifdef DEBUG
 			if (debug > 2) {
 				Serial.print(F("switch #"));
 				Serial.print(i);

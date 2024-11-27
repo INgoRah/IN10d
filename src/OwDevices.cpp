@@ -61,8 +61,10 @@ void OwDevices::cacheInit()
 {
 	uint8_t adr[8];
 
+	if (debug > 0) {
+		Serial.println(F("Cache and Version update"));
+	}
 	for (int i = 0; i < MAX_BUS; i++) {
-		wdt_reset();
 		ow->selectChannel(i);
 		ow->reset();
 		ow->reset_search();
@@ -71,13 +73,19 @@ void OwDevices::cacheInit()
 			wdt_reset();
 			if (adr[0] == 0x29) {
 				ds2408PioGet(i, adr, true);
-				dev_vers[i][adr[1]] = 3;
+				if (adr[1] < MAX_ADR) {
+					dev_vers[i][adr[1]] = 5;
+					if (debug > 0) {
+						Serial.print(i, HEX);
+						Serial.print(F("."));
+						Serial.println(adr[1], HEX);
+					}
+				}
 			}
 		}
 	}
 	versionUpdate(2, 7);
 	versionUpdate(0, 8);
-	versionUpdate(0, 1);
 	versionUpdate(0, 2);
 }
 
@@ -360,6 +368,8 @@ uint8_t OwDevices::ds2408PioSet(byte bus, uint8_t* addr, uint8_t pio)
 		Serial.print(err);
 		Serial.print(F(" data="));
 		Serial.print(pio, HEX);
+		Serial.print(F(" r="));
+		Serial.print(r, HEX);
 		if (retry == 0)
 			Serial.println(F(" ERR! "));
 		else {
@@ -397,8 +407,8 @@ uint8_t OwDevices::ds2408xPinSet(byte bus, uint8_t* addr, uint8_t pio, uint8_t l
 		ow->select(addr);
 	for (int i = 0; i < 5; i++) {
 		if (debug > 2) {
-			Serial.print(F(" "));
 			Serial.print(data[i], HEX);
+			Serial.print(F(" "));
 		}
 		ow->write(data[i]);
 		if (ow->last_err != 0)

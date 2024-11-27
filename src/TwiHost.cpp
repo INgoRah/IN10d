@@ -413,7 +413,7 @@ void TwiHost::addEvent(union d_adr_8 dst, uint16_t data, uint8_t type)
 
 void TwiHost::handleAck(uint8_t ack)
 {
-#ifdef DEBUG
+#ifdef EXT_DEBUG
 	unsigned long tm = millis() - host_lock;
 	if (debug > 4 && host_lock) {
 		Serial.print (F("I2C locked time = "));
@@ -423,8 +423,8 @@ void TwiHost::handleAck(uint8_t ack)
 	if (ack == _seq) {
 		// serviced
 		_ack = ack;
-#ifdef DEBUG
-		if (debug > 3) {
+#ifdef EXT_DEBUG
+		if (debug > 4) {
 			log_time();
 			Serial.print (F("ACKed "));
 			Serial.println(ack, HEX);
@@ -433,7 +433,7 @@ void TwiHost::handleAck(uint8_t ack)
 		setStatus(STAT_OK);
 	} else {
 		setStatus(STAT_WRONG);
-#ifdef DEBUG
+#ifdef EXT_DEBUG
 		if (debug > 0) {
 			log_time();
 			Serial.print (F("ACK mismatch "));
@@ -480,7 +480,7 @@ void TwiHost::receiveEvent(int howMany) {
 	switch (d)
 	{
 	case CMD_REBOOT:
-#ifdef DEBUG
+#ifdef EXT_DEBUG
 		Serial.print (F("Forced Reset..."));
 #endif
 		while (1);

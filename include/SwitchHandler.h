@@ -102,6 +102,7 @@ enum tim_type {
 	TYPE_DARK_15MIN	/* 16 */,
 	TYPE_DARK_30MIN	/* 17 */,
 	TYPE_DARK_1H 	/* 18 */,
+#ifdef SOFTOFF_SUPPORT
 	/** Timer on darkness with soft off per time
 	 *  if supported (dimmable), time 5 secs */
 	TYPE_DARK_SOFT = 20,
@@ -114,6 +115,7 @@ enum tim_type {
 	TYPE_DARK_SOFT_15MIN	/* 27 */,
 	TYPE_DARK_SOFT_30MIN	/* 28 */,
 	TYPE_DARK_SOFT_1H 	/* 29 */,
+#endif
 	/** Timer on darkness with blinking off per time */
 	TYPE_DARK_BLINK = 30,
 	TYPE_DARK_BLINK_30S	/* 31 */,
@@ -169,7 +171,6 @@ class SwitchHandler
 #endif
 		uint8_t dimLevel(union pio dst, uint8_t* id);
 		uint8_t dimLevel(union d_adr_8 dst, uint8_t* id);
-		bool switchLevelStep(union pio dst, uint8_t level);
 		bool setPio(union pio dst, uint8_t adr[8], uint8_t d, enum _pio_mode state);
 		bool setLevel(union pio dst, uint8_t adr[8], uint8_t* d, uint8_t id, uint8_t level);
 		uint16_t getLen(uint8_t max, uint16_t elSize);

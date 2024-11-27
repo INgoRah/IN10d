@@ -46,6 +46,7 @@ static boolean stringComplete = false;  // whether the string is complete
 static String inputString = "";         // a String to hold incoming data
 static OwDevices* ow;
 static byte curBus, curAdr, curPio;
+static byte adr[8];
 
 /*
  * Global functions
@@ -195,7 +196,6 @@ void CmdCli::funcBus(CmdParser *myParser)
 void CmdCli::funcSearch(CmdParser *myParser)
 {
 	int res, k;
-	byte adr[8];
 	bool alarm = true;
 
 	if (myParser->getParamCount() > 0)
@@ -233,10 +233,9 @@ void CmdCli::funcStatus(CmdParser *myParser)
 {
 	bool res;
 	byte data[10], i;
-	byte adr[8];
 
+	adr[0] = 0x29;
 	if (myParser->getParamCount() > 1) {
-
 		curBus = atoi(myParser->getCmdParam(1));
 		curAdr = atoi(myParser->getCmdParam(2));
 		if (myParser->getParamCount() > 2)
@@ -245,7 +244,7 @@ void CmdCli::funcStatus(CmdParser *myParser)
 			res = false;
 	}
 	ow->adrGen(curBus, adr, curAdr);
-#ifdef EXT_DEBUG
+#ifdef DEBUG
 	if (debug) {
 		for (i = 0; i < 7; i++) {
 			Serial.print(adr[i], HEX);
@@ -267,9 +266,10 @@ void CmdCli::funcPio(CmdParser *myParser)
 {
 	uint8_t level;
 	union pio dst;
+	bool ret;
 
+	adr[0] = 0x29;
 	if (myParser->getParamCount() == 0) {
-		Serial.println(F("Cache and Version update"));
 		ow->cacheInit();
 		return;
 	}
@@ -291,7 +291,10 @@ void CmdCli::funcPio(CmdParser *myParser)
 	// convenience: 1 instead of typing 100
 	if (level == 1)
 		level = 100;
-	swHdl.switchLevel(dst, level);
+	ret = swHdl.switchLevel(dst, level);
+	if (!ret) {
+		Serial.println(F("cmd failed!"));
+	}
 }
 
 void CmdCli::funcPin(CmdParser *myParser)
@@ -309,12 +312,10 @@ void CmdCli::funcPin(CmdParser *myParser)
 		Serial.println(F("bus adr pio type time level"));
 		return;
 	}
-	byte adr[8];
 	uint16_t crc;
+	adr[0] = 0x29;
 
 	byte data[5] = { 0xC5, type, curPio, pio_tmr, level };
-	Serial.print(F("Timed PIO "));
-	Serial.print(pio_tmr, HEX);
 	ds->selectChannel(curBus);
 	ds->reset();
 	ow->adrGen(curBus, adr, curAdr);
@@ -328,15 +329,10 @@ void CmdCli::funcPin(CmdParser *myParser)
 	}
 	crc = ds->read();
 	crc |= ds->read() << 8;
-	uint16_t crc16 = ds->crc16(data, 5, 0);
-	Serial.print(crc, HEX);
-	Serial.print(F(" calc="));
-	Serial.println(~crc16, HEX);
 }
 
 void CmdCli::funcTemp(CmdParser *myParser)
 {
-	byte adr[8];
 	uint16_t temp;
 	uint8_t hum;
 
@@ -357,8 +353,7 @@ void CmdCli::funcTemp(CmdParser *myParser)
 	}
 #endif
 	adr[0] = 0x28;
-	adr[1] = curAdr;
-	ow->adrGen(curBus, adr, adr[1]);
+	ow->adrGen(curBus, adr, curAdr);
 #ifdef EXT_DEBUG
 	if (debug) {
 		int i;
@@ -385,7 +380,7 @@ void CmdCli::funcTemp(CmdParser *myParser)
 
 void CmdCli::funcAdc(CmdParser *myParser)
 {
-	byte adr[8], ch = 1;
+	byte ch = 1;
 	uint16_t adc;
 
 	if (myParser->getParamCount() > 1) {
@@ -457,7 +452,7 @@ print_mode:
 void CmdCli::funcCfg(CmdParser *myParser)
 {
 	uint8_t i, len;
-	byte adr[8], data[MAX_CFG_SIZE];
+	byte data[MAX_CFG_SIZE];
 	char *c;
 
 	c = myParser->getCmdParam(1);
@@ -472,7 +467,9 @@ void CmdCli::funcCfg(CmdParser *myParser)
 	if (adr[1] > 20) {
 		adr[1] = adr[1] - 20;
 		adr[0] = 0x28;
-	}
+	} else
+		adr[0] = 0x29;
+
 	ow->adrGen(curBus, adr, adr[1]);
 	if (myParser->getParamCount() == 1) {
 		if (adr[0] == 0x28)
@@ -541,7 +538,6 @@ c 7 8 07 ff 00 00 STURM
 void CmdCli::funcCmd(CmdParser *myParser)
 {
 	byte d;
-	byte adr[8];
 	char *txt;
 	byte data[10];
 	int i;
@@ -804,17 +800,17 @@ void CmdCli::funcSwCmd(CmdParser *myParser)
 
 	// byte time;
 	// 1:cmd, 2:bus, 3:adr, 4:latch
-	byte bus, adr, pio;
+	byte bus, id, pio;
 	bus = atoi(myParser->getCmdParam(off++));
-	adr = atoi(myParser->getCmdParam(off++));
+	id = atoi(myParser->getCmdParam(off++));
 	pio = atoi(myParser->getCmdParam(off++));
-	if (pio > 1 || adr > 15 || bus > 3)  {
+	if (pio > 1 || id > 15 || bus > 3)  {
 		dst16.da.bus = bus;
-		dst16.da.adr = adr;
+		dst16.da.adr = id;
 		dst16.da.pio = pio;
 	} else {
 		dst.da.bus = bus;
-		dst.da.adr = adr;
+		dst.da.adr = id;
 		dst.da.pio = pio;
 	}
 	/*if (myParser->getParamCount() > 7)
@@ -824,7 +820,7 @@ void CmdCli::funcSwCmd(CmdParser *myParser)
 		dst.da.type = atoi(myParser->getCmdParam(off));
 	switch (*c) {
 		case 's':
-			if (dst.da.adr == adr) {
+			if (dst.da.adr == id) {
 				for (i = 0; i < MAX_SWITCHES; i++) {
 					if (sw_tbl[i].src.data == 0 || sw_tbl[i].src.data == src.data) {
 						sw_tbl[i].src.data = src.data;
@@ -934,7 +930,6 @@ void CmdCli::funcLog(CmdParser *myParser)
 void CmdCli::funcChgId(CmdParser *myParser)
 {
 	byte id, bus, i;
-	byte adr[8];
 	byte newAdr[8];
 
 	bus = me->atoh(myParser->getCmdParam(1), false);
