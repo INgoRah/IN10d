@@ -395,7 +395,7 @@ void pin_loop()
 	if (pinSignal == 0)
 		return;
 #ifdef DEBUG
-	if (debug > 3) {
+	if (debug > 4) {
 		Serial.print(F("PIN Signal: "));
 		Serial.println(pinSignal);
 	}

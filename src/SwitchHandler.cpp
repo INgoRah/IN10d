@@ -591,13 +591,13 @@ bool SwitchHandler::setLevel(union pio dst, uint8_t adr[8], uint8_t* d, uint8_t 
 	if (debug > 1) {
 		printDst(dst);
 		Serial.print(F(" = "));
-		Serial.print(*d, HEX);
+		Serial.println(*d, HEX);
 	}
 #endif
 	switch (dst.da.type) {
 	case TYPE_DS29X:
 	default:
-#if 1
+#if 0
 		uint8_t v;
 		v = _devs->getVersion(dst.da.bus, dst.da.adr);
 		if (v > 6) {
@@ -606,7 +606,7 @@ bool SwitchHandler::setLevel(union pio dst, uint8_t adr[8], uint8_t* d, uint8_t 
 			level = level * 4 + 3;
 		if (_devs->ds2408xPinSet(dst.da.bus, adr, dst.da.pio, level) != 0xAA)
 			return false;
-#if 1
+#if 0
 		}
 		// not supporting older version anymore		
 		 else {
@@ -620,6 +620,7 @@ bool SwitchHandler::setLevel(union pio dst, uint8_t adr[8], uint8_t* d, uint8_t 
 		}
 #endif
 		break;
+#ifdef INTERN_PIOS
 	case TYPE_INTERN:
 		if (dst.da.bus == 0 && dst.da.adr == 0) {
 			if (dst.da.pio == 0) {
@@ -632,6 +633,7 @@ bool SwitchHandler::setLevel(union pio dst, uint8_t adr[8], uint8_t* d, uint8_t 
 			}
 		}
 		break;
+#endif /* INTERN_PIOS */
 	}
 #ifdef DEBUG
 	if (debug > 1) {
@@ -661,10 +663,7 @@ bool SwitchHandler::setPio(union pio dst, uint8_t adr[8], uint8_t d, enum _pio_m
 {
 	uint8_t pio, r;
 
-#ifdef EXT_DEBUG
-	if (debug > 2)
-		printDst(dst);
-#endif
+#ifdef INTERN_PIOS
 	if (dst.da.type == TYPE_INTERN) {
 		/* special case: our own pin, is a dimmer, no need to handle here */
 		// PIO0: PWM on pin 5
@@ -701,6 +700,7 @@ bool SwitchHandler::setPio(union pio dst, uint8_t adr[8], uint8_t d, enum _pio_m
 		host.addEvent (dst, (1 << pin));
 		return true;
 	}
+#endif /* INTERN_PIOS */
 	/* turn to bitmask (da.pio = 0,1,2 >> pio = 1,2,4) */
 	pio = 1 << dst.da.pio;
 
@@ -850,11 +850,13 @@ bool SwitchHandler::actorHandle(union d_adr_8 dst, enum _pio_mode state)
 		case TOGGLE:
 			// toggle level: off - 1 - 2 - off
 			dim = dimStage(dim);
+#ifdef SOFTOFF_SUPPORT
 			if (dim == 0){
-				timerUpdate(dst, TYPE_DARK_SOFT);
+				timerUpdate(dst, TYPE_DARK);
 				return true;
 			} else
-				ret = setLevel (p, adr, &d, id, dim);
+#endif
+			ret = setLevel (p, adr, &d, id, dim);
 			break;
 		case ON:
 			if (dim > 0) {

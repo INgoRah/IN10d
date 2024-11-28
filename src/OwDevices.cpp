@@ -71,13 +71,13 @@ void OwDevices::cacheInit()
 			wdt_reset();
 			if (adr[0] == 0x29) {
 				ds2408PioGet(i, adr, true);
-				dev_vers[i][adr[1]] = 3;
+				if (adr[1] < MAX_ADR)
+					dev_vers[i][adr[1]] = 5;
 			}
 		}
 	}
 	versionUpdate(2, 7);
 	versionUpdate(0, 8);
-	versionUpdate(0, 1);
 	versionUpdate(0, 2);
 }
 
@@ -360,6 +360,8 @@ uint8_t OwDevices::ds2408PioSet(byte bus, uint8_t* addr, uint8_t pio)
 		Serial.print(err);
 		Serial.print(F(" data="));
 		Serial.print(pio, HEX);
+		Serial.print(F(" r="));
+		Serial.print(r, HEX);
 		if (retry == 0)
 			Serial.println(F(" ERR! "));
 		else {
