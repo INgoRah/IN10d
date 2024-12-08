@@ -648,6 +648,27 @@ void CmdCli::dumpSwTbl(void)
 	Serial.print(size);
 	Serial.print(F("/"));
 	Serial.println((int)sizeof(timed_tbl));
+
+	Serial.println(F("= Switches 16 bit ="));
+	for (i = 0; i < 2; i++) {
+		union pio p;
+		src.data = sw_tbl16[i].src.data;
+		p.data = sw_tbl16[i].dst.data;
+		if (src.data == 0)
+			continue;
+		if (src.data == 0xffff && dst.data == 0xff)
+			continue;
+		size += sizeof(struct _sw_tbl);
+		src.sa.res = 0;
+		printSrc(src);
+		Serial.print(F(" -> "));
+		printDst(p);
+		Serial.print(F(" ("));
+		Serial.print(src.data, HEX);
+		Serial.print(F(" | "));
+		Serial.print(p.data, HEX);
+		Serial.println(F(")"));
+	}
 }
 
 /*
@@ -820,7 +841,7 @@ void CmdCli::funcSwCmd(CmdParser *myParser)
 		dst.da.type = atoi(myParser->getCmdParam(off));
 	switch (*c) {
 		case 's':
-			if (dst.da.adr == id) {
+			if (pio < 2) {
 				for (i = 0; i < MAX_SWITCHES; i++) {
 					if (sw_tbl[i].src.data == 0 || sw_tbl[i].src.data == src.data) {
 						sw_tbl[i].src.data = src.data;
@@ -829,8 +850,14 @@ void CmdCli::funcSwCmd(CmdParser *myParser)
 					}
 				}
 			} else {
-				Serial.println(F("16 table (not implemented)"));
-				(void)dst16.da.bus;
+				Serial.println(F("16 table"));
+				for (i = 0; i < MAX_SWITCHES; i++) {
+					if (sw_tbl16[i].src.data == 0 || sw_tbl16[i].src.data == src.data) {
+						sw_tbl16[i].src.data = src.data;
+						sw_tbl16[i].dst.data = dst16.data;
+						break;
+					}
+				}
 			}
 			break;
 		case 't':

@@ -20,6 +20,7 @@ struct _timer_item {
 struct _dim_tbl dim_tbl[MAX_DIMMER];
 
 struct _sw_tbl sw_tbl[MAX_SWITCHES];
+struct _sw_tbl16 sw_tbl16[2];
 
 /* need switch off time! */
 struct _sw_tim_tbl timed_tbl[MAX_TIMED_SWITCH];
@@ -817,16 +818,26 @@ bool SwitchHandler::initialStates()
 */
 bool SwitchHandler::actorHandle(union d_adr_8 dst, enum _pio_mode state)
 {
-	uint8_t adr[8], d, dim, id;
 	union pio p;
-	bool ret = false;
-
 	p.data = 0;
 	p.da.bus = dst.da.bus;
 	p.da.adr = dst.da.adr;
 	p.da.pio = dst.da.pio;
-	p.da.type = getType(p);
 
+	return actorHandle(p, state);
+}
+
+/* Reads out PIO data and checks for dimmer, calls toggle or set
+   functions for PIO or dimmer.
+ @return true if successfully switched, false in case of an error or
+ no action was needed (if switch is already in that state)
+*/
+bool SwitchHandler::actorHandle(union pio p, enum _pio_mode state)
+{
+	uint8_t adr[8], d, dim, id;
+	bool ret = false;
+
+	p.da.type = getType(p);
 	if (p.da.type != TYPE_INTERN)
 		d = dataRead(p, adr);
 	dim = dimLevel(p, &id);
@@ -864,7 +875,7 @@ bool SwitchHandler::actorHandle(union d_adr_8 dst, enum _pio_mode state)
 actor_out:
 	if (ret) {
 		d = _devs->ds2408PioGet(p.da.bus, adr);
-		host.addEvent (dst, (uint16_t)d);
+		host.addEvent (p, (uint16_t)d);
 	}
 	return ret;
 }
@@ -959,6 +970,26 @@ bool SwitchHandler::switchHandle(uint8_t busNr, uint8_t adr1)
 			else
 				/* toggle io or select levels */
 				actorHandle(sw_tbl[i].dst, TOGGLE);
+		}
+	}
+	for (i = 0; i < 2; i++) {
+		if (src.data == sw_tbl16[i].src.data) {
+#ifdef DEBUG
+			if (debug > 2) {
+				Serial.print(F("switch16 #"));
+				Serial.print(i);
+				Serial.print(" ");
+				Serial.print(src.data, HEX);
+				Serial.print(" -> ");
+			}
+#endif
+			struct _timer_item* tmr = timerItem(sw_tbl16[i].dst.data);
+			if (tmr != NULL && tmr->secs)
+				/* timer running, stop it */
+				tmr->secs = 0;
+			else
+				/* toggle io or select levels */
+				actorHandle(sw_tbl16[i].dst, TOGGLE);
 		}
 	}
 

@@ -181,10 +181,8 @@ pin 2 7 0 e3 250 0
 pin 0 2 0 e3 250 250
 
 threshold
-pin 2 7 0 e5 220 0
-
-pin 0 2 2 44 0 0
-cfg 4 w 1 70 10 1 1 0 31 0 0 0 1 0 0
+pin 2 7 0 e5 240 0
+pin 0 2 0 e5 225 0
 
 cfg 7 w ff ff ff ff 20 ff ff ff ff ff ff 23 02 00 00 ff ff ff ff FC
 cfg 7 w 1 90 20 0 5 2 2 0 21 0 0 0 0 0 0

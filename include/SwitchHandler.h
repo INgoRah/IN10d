@@ -79,6 +79,11 @@ struct _sw_tbl {
 	union d_adr_8 dst;
 };
 
+struct _sw_tbl16 {
+	union s_adr src;
+	union pio dst;
+};
+
 enum tim_type {
 	/** Timer always, hard off per time */
 	TYPE_DEF,
@@ -151,6 +156,7 @@ enum _pio_mode {
 extern struct _sw_tbl sw_tbl[MAX_SWITCHES];
 extern struct _sw_tim_tbl timed_tbl[MAX_TIMED_SWITCH];
 extern struct _dim_tbl dim_tbl[MAX_DIMMER];
+extern struct _sw_tbl16 sw_tbl16[2];
 
 class SwitchHandler
 {
@@ -174,6 +180,8 @@ class SwitchHandler
 		bool setPio(union pio dst, uint8_t adr[8], uint8_t d, enum _pio_mode state);
 		bool setLevel(union pio dst, uint8_t adr[8], uint8_t* d, uint8_t id, uint8_t level);
 		uint16_t getLen(uint8_t max, uint16_t elSize);
+		bool actorHandle(union d_adr_8 dst, enum _pio_mode state);
+		bool actorHandle(union pio p, enum _pio_mode state);
 	public:
 		uint8_t mode;
 		uint8_t light_thr;
@@ -182,7 +190,6 @@ class SwitchHandler
 		SwitchHandler();
 		SwitchHandler(OwDevices* devs);
 		void status();
-		bool actorHandle(union d_adr_8 dst, enum _pio_mode state);
 		void begin(OneWireBase *ow);
 		void loop();
 		void initSwTable();
