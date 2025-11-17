@@ -409,7 +409,7 @@ void SwitchHandler::loop()
 		/* this is the off state handling, timer expired */
 		if (millis() > tmr->ms + (tmr->secs * 1000)) {
 #ifdef DEBUG
-			if (debug > 2) {
+			if (debug > 3) {
 				log_time();
 				Serial.print(F("timer off "));
 				Serial.println(tmr->secs);
@@ -1066,6 +1066,9 @@ bool SwitchHandler::alarmHandler(uint8_t busNr)
 					/* status in 5 signals a dimming down */
 					host.addEvent (DIMMING_DOWN, busNr, adr[1], 255);
 				}
+				if (data[5] & 0x88) {
+					Serial.println("Watchdog!");
+				}
 				while (cur_latch != 0 && to > 0) {
 					wdt_reset();
 					switchHandle(busNr, adr[1]);
@@ -1082,7 +1085,7 @@ bool SwitchHandler::alarmHandler(uint8_t busNr)
 				if (hum != 0xff)
 					host.addEvent (HUMIDITY_CHANGE, busNr, adr[1], hum);
 #ifdef DEBUG
-				if (debug > 2) {
+				if (debug > 3) {
 					Serial.print(busNr);
 					Serial.print(F("."));
 					Serial.print(adr[1]);

@@ -359,6 +359,8 @@ static void check_light(byte mode)
 				Serial.println(light);
 			}
 			ow.ds2408xPinSet(2, adr, 0, 0, 0xE3, light);
+			// force polling (if watchdog happend)
+			alarmPolling = 0;
 		}
 		host.addEvent (TYPE_BRIGHTNESS, 0, 9, light);
 	}
@@ -483,9 +485,8 @@ void loop()
 	pin_loop();
 	swHdl.loop();
 	alarm_loop();
-	if (millis() - alarmPolling > 3000) {
+	if (millis() - alarmPolling > 2500) {
 		alarmPolling = millis();
-		//swHdl.mode = MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH;
 		if (swHdl.mode & MODE_ALRAM_POLLING) {
 			for (byte i = 0; i < MAX_BUS;i++) {
 				wdr();

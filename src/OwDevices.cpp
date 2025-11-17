@@ -406,10 +406,6 @@ uint8_t OwDevices::ds2408xPinSet(byte bus, uint8_t* addr, uint8_t pio, uint8_t l
 	if (ret)
 		ow->select(addr);
 	for (int i = 0; i < 5; i++) {
-		if (debug > 2) {
-			Serial.print(data[i], HEX);
-			Serial.print(F(" "));
-		}
 		ow->write(data[i]);
 		if (ow->last_err != 0)
 			break;
@@ -420,8 +416,6 @@ uint8_t OwDevices::ds2408xPinSet(byte bus, uint8_t* addr, uint8_t pio, uint8_t l
 	crc = ow->read();
 	crc |= ow->read() << 8;
 	uint16_t crc16 = ow->crc16(data, 5, 0);
-	if (debug > 2)
-		Serial.println(crc, HEX);
 	if (crc == ~crc16)
 		return 0xAA;
 
@@ -584,10 +578,6 @@ int16_t OwDevices::adcRead(byte busNr, byte addr[8], byte ch, byte mode)
 	for (byte i = 0; i < 4; i++) {
 		dat[i] = ow->read();
 		dat[i] |= ow->read() << 8;
-		if (debug > 4) {
-			Serial.print(F(" "));
-			Serial.println(dat[i], HEX);
-		}
 	}
 	crc = ow->read();
 	crc |= ow->read() << 8;
