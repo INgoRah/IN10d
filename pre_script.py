@@ -3,9 +3,15 @@ import subprocess
 
 # Get 0.0.0 version from latest Git tag
 tagcmd = "git describe --tags --abbrev=0"
-version = subprocess.check_output(tagcmd, shell=True).decode().strip()
+try:
+	version = subprocess.check_output(tagcmd, shell=True).decode().strip()
+except Exception:
+	version = "1.0"
 revcmd = "git log --pretty=format:%h -n 1"
-commit = subprocess.check_output(revcmd, shell=True).decode().strip()
+try:
+	commit = subprocess.check_output(revcmd, shell=True).decode().strip()
+except Exception:
+	commit = "deadbeef"
 
 f = open("include/version.h", "w")
 f.write('#ifndef _VERSION_H\n')
