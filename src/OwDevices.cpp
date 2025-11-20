@@ -122,6 +122,7 @@ void OwDevices::versionUpdate(uint8_t bus, uint8_t id)
 	adrGen(bus, adr, id);
 	ds2408CfgRead(bus, adr, _data);
 	dev_vers[bus][id] = _data[22];
+	wdt_reset();
 	if (debug > 1) {
 		Serial.print(bus);
 		Serial.print(".");
@@ -416,6 +417,13 @@ uint8_t OwDevices::ds2408xPinSet(byte bus, uint8_t* addr, uint8_t pio, uint8_t l
 	crc = ow->read();
 	crc |= ow->read() << 8;
 	uint16_t crc16 = ow->crc16(data, 5, 0);
+	if (debug > 2) {
+		for (int i = 0; i < 5; i++) {
+			Serial.print(F(" "));
+			Serial.print(data[i], HEX);
+			Serial.print(F(" "));
+		}
+	}
 	if (crc == ~crc16)
 		return 0xAA;
 

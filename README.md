@@ -74,13 +74,13 @@ Still the lookup table could be too large and this needs to be mitigated.
 C3 - channel select like in DS2482
 F0 - reset
 69 - mode selection: [2] [4]
-5A - search first device, wait for search cycle for reading, returns 0 if nothing found or | id | adr [8]  
-5B - search next device, returns 0 if nothing found or | id | adr [8]  
-01 - read one event from fifo, status: busy,ok,no_data  
-02 - add switch entry:  type, bus, adr1, latch, press [0..2], da.bus,da.adr,da.pio  
-03 - write PIO: type, bus, adr1, pio and release lock, check for an event acknowledging the change  
-E2 - lock i2c bus and get status, if no events in the queue the lock is released again  
-78 - Handle ack: pass the sequence number to be acked, this releases the lock  
+5A - search first device, wait for search cycle for reading, returns 0 if nothing found or | id | adr [8]
+5B - search next device, returns 0 if nothing found or | id | adr [8]
+01 - read one event from fifo, status: busy,ok,no_data
+02 - add switch entry:  type, bus, adr1, latch, press [0..2], da.bus,da.adr,da.pio
+03 - write PIO: type, bus, adr1, pio and release lock, check for an event acknowledging the change
+E2 - lock i2c bus and get status, if no events in the queue the lock is released again
+78 - Handle ack: pass the sequence number to be acked, this releases the lock
 
 status: alarm bus 3 | alarm bus 2 | alarm bus 1 | alarm bus0
 bus select
@@ -158,7 +158,7 @@ sw t <timer type> <bus> <adr> <latch> <dst bus> <dst adr> <dst pio> [type]
 
 ## EEPROM config space
 
-3 6 0 1 0 0 3 0 80 1D 9 2 
+3 6 0 1 0 0 3 0 80 1D 9 2
             vers=3 tbl@8 len=3
 	                timed  @15 timed vers=2 len=0 / Max 40
 			       16bit @ 17 vers=0 len=0 / Max 0
@@ -173,15 +173,17 @@ pin 0 2 0 eb 0 0
 pin 0 2 0 ee 0 0
 on
 pin 0 2 0 DD 0 254
+pin 2 7 0 DD 0 254
 off
 pin 0 2 0 EB 0 0
+pin 2 7 0 EB 0 0
 
 brightness
 pin 2 7 0 e3 250 0
 pin 0 2 0 e3 250 250
 
 threshold
-pin 2 7 0 e5 240 0
+pin 2 7 0 e5 210 0
 pin 0 2 0 e5 225 0
 
 cfg 7 w ff ff ff ff 20 ff ff ff ff ff ff 23 02 00 00 ff ff ff ff FC
@@ -189,14 +191,14 @@ cfg 7 w 1 90 20 0 5 2 2 0 21 0 0 0 0 0 0
 
         R |R |R |SW 1  2  3  4  5  6  7 |CFG 1 2  3  4  5  6  7 |FEA|OFF|MAJ|MIN|TYP
 cfg 2 w F8 FF FF FF FF FF FF FF 20 FF FF 23 21 21 21 21 02 10 10
-        T|TH|DD|DU|DF|T1|T2|SW 1  2  3  4  5  6  7 
+        T|TH|DD|DU|DF|T1|T2|SW 1  2  3  4  5  6  7
 cfg 2 w 1 C0 20 00 0A 03 01 ff ff ff FF FF 21 FF FF FF FF FF FF
 cfg 2 w 1
 cfg 2
 
 
 cfg 7 w 1
-        T|TH|DD|DU|DF|T1|T2|SW 1  2  3  4  5  6  7 
+        T|TH|DD|DU|DF|T1|T2|SW 1  2  3  4  5  6  7
 cfg 7 w 1 40 10 00 0A 01 01 FF 21 FF FF FF FF FF FF FF FF FF FF FF FF
 p 2 7 0 30
 

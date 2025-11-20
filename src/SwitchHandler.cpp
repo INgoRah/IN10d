@@ -365,8 +365,7 @@ uint8_t SwitchHandler::dimDown(struct _timer_item* tmr)
 		uint8_t adr[8];
 
 		p.da.type = TYPE_DS29X;
-		d = dataRead(p, adr);
-		setLevel(p, adr, &d, tmr->id, level);
+		setLevel(p, adr, tmr->id, level);
 	}
 	dim_tbl[tmr->id].level = level;
 	if (level == 0) {
@@ -564,8 +563,8 @@ uint8_t SwitchHandler::dataRead(union pio dst, uint8_t adr[8])
 
 	_devs->adrGen(dst.da.bus, adr, dst.da.adr);
 	d = _devs->ds2408PioGet(dst.da.bus, adr);
-#ifdef EXT_DEBUG
-	if (debug > 2) {
+#ifdef DEBUG
+	if (debug > 4) {
 		Serial.print(F(" ("));
 		Serial.print(d, HEX);
 		Serial.print(F(") "));
@@ -586,15 +585,8 @@ uint8_t SwitchHandler::dataRead(union pio dst, uint8_t adr[8])
  * @remark This function does not notify the host for any change. Needs to be done by the
  * calling function using the updated value in "d"
  */
-bool SwitchHandler::setLevel(union pio dst, uint8_t adr[8], uint8_t* d, uint8_t id, uint8_t level)
+bool SwitchHandler::setLevel(union pio dst, uint8_t adr[8], uint8_t id, uint8_t level)
 {
-#ifdef DEBUG
-	if (debug > 1) {
-		printDst(dst);
-		Serial.print(F(" = "));
-		Serial.println(*d, HEX);
-	}
-#endif
 	switch (dst.da.type) {
 	case TYPE_DS29X:
 	default:
@@ -603,25 +595,19 @@ bool SwitchHandler::setLevel(union pio dst, uint8_t adr[8], uint8_t* d, uint8_t 
 		v = _devs->getVersion(dst.da.bus, dst.da.adr);
 		if (v > 6) {
 #endif
-		if (level != 0)
-		/* convert from 1 .. 100 to
-		   1 .. 254 */
-		level = level / 100 * 254;
-		if (_devs->ds2408xPinSet(dst.da.bus, adr, dst.da.pio, level) != 0xAA)
-			return false;
-#if 0
+		if (level != 0) {
+			/* convert from 1 .. 100 to 1 .. 254 */
+			level = level * 254 / 100;
 		}
-		// not supporting older version anymore		
-		 else {
-			// clear level in data
-			*d &= 0x3;
-			if (level > 0)
-				// set level and switch PIO on
-				*d |= (level << 2);
-			if (_devs->ds2408PioSet(dst.da.bus, adr, *d) != 0xAA)
-				return false;
+#ifdef DEBUG
+		if (debug > 1) {
+			printDst(dst);
+			Serial.print(F(" lvl = "));
+			Serial.println(level);
 		}
 #endif
+		if (_devs->ds2408xPinSet(dst.da.bus, adr, dst.da.pio, level) != 0xAA)
+			return false;
 		break;
 #ifdef INTERN_PIOS
 	case TYPE_INTERN:
@@ -638,12 +624,6 @@ bool SwitchHandler::setLevel(union pio dst, uint8_t adr[8], uint8_t* d, uint8_t 
 		break;
 #endif /* INTERN_PIOS */
 	}
-#ifdef DEBUG
-	if (debug > 1) {
-		Serial.print(F(" -> "));
-		Serial.println(*d, HEX);
-	}
-#endif
 	dim_tbl[id].level = level;
 
 	return true;
@@ -764,12 +744,13 @@ bool SwitchHandler::switchLevel(union pio dst, uint8_t level)
 	dst.da.type = getType(dst);
 	if (dst.da.type != TYPE_INTERN) {
 		_devs->adrGen(dst.da.bus, adr, dst.da.adr);
-		d = _devs->ds2408PioGet(dst.da.bus, adr);
 	}
 	dimLevel(dst, &id);
 	if (id != 0xff) {
-		ret = setLevel(dst, adr, &d, id, level);
+		ret = setLevel(dst, adr, id, level);
 	} else {
+		if (dst.da.type != TYPE_INTERN)
+			d = _devs->ds2408PioGet(dst.da.bus, adr);
 		// 	addEvent is done in setPio
 		if (level < 32)
 			ret = setPio (dst, adr, d, OFF);
@@ -840,8 +821,8 @@ bool SwitchHandler::actorHandle(union pio p, enum _pio_mode state)
 	p.da.type = getType(p);
 	if (p.da.type != TYPE_INTERN)
 		d = dataRead(p, adr);
-	dim = dimLevel(p, &id);
 
+	dim = dimLevel(p, &id);
 	if (id == 0xff) {
 		// simply pass the state
 		ret = setPio (p, adr, d, state);
@@ -858,18 +839,18 @@ bool SwitchHandler::actorHandle(union pio p, enum _pio_mode state)
 				return true;
 			} else
 #endif
-			ret = setLevel (p, adr, &d, id, dim);
+			ret = setLevel (p, adr, id, dim);
 			break;
 		case ON:
 			if (dim > 0) {
 				/* was on before, don't start timer */
 				return false;
 			}
-			ret = setLevel(p, adr, &d, id, dim_on_lvl);
+			ret = setLevel(p, adr, id, dim_on_lvl);
 			break;
 		case OFF:
 		default:
-			ret = setLevel(p, adr, &d, id, 0);
+			ret = setLevel(p, adr, id, 0);
 	}
 
 actor_out:

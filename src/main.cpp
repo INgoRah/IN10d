@@ -192,6 +192,7 @@ void setup() {
 	alarmPolling = 0;
 	host.addEvent (SYS_START, 0, 9, 0);
 	check_light(0);
+	wdt_reset();
 	delay(500);
 	check_light(1);
 }

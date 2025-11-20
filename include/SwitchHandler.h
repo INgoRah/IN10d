@@ -178,7 +178,7 @@ class SwitchHandler
 		uint8_t dimLevel(union pio dst, uint8_t* id);
 		uint8_t dimLevel(union d_adr_8 dst, uint8_t* id);
 		bool setPio(union pio dst, uint8_t adr[8], uint8_t d, enum _pio_mode state);
-		bool setLevel(union pio dst, uint8_t adr[8], uint8_t* d, uint8_t id, uint8_t level);
+		bool setLevel(union pio dst, uint8_t adr[8], uint8_t id, uint8_t level);
 		uint16_t getLen(uint8_t max, uint16_t elSize);
 		bool actorHandle(union d_adr_8 dst, enum _pio_mode state);
 		bool actorHandle(union pio p, enum _pio_mode state);
