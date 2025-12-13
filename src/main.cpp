@@ -389,7 +389,7 @@ void light_loop()
 				hour = 0;
 		}
 		// check brightness every 10 mins
-		if ((min % 5) == 0) {
+		if ((min % 5) == 0 && mode == 0) {
 			check_light(0);
 			mode = 1;
 		}

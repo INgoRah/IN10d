@@ -325,7 +325,7 @@ void OwDevices::toggleDs2413(byte bus, uint8_t* addr)
 
 uint8_t OwDevices::ds2408PioSet(byte bus, uint8_t* addr, uint8_t pio)
 {
-#if defined(AVRSIM)
+#if defined(AVRSIM_TOP)
 	pio_data[bus][addr[1] & 0x0f] = pio;
 	return 0xAA;
 #else

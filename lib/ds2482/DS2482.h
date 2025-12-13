@@ -125,6 +125,7 @@ public:
     // the same devices in the same order.
     bool search(uint8_t *newAddr, bool search_mode = true);
 #endif
+	void dump();
 
 private:
   uint8_t ch;

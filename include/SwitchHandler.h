@@ -180,8 +180,6 @@ class SwitchHandler
 		bool setPio(union pio dst, uint8_t adr[8], uint8_t d, enum _pio_mode state);
 		bool setLevel(union pio dst, uint8_t adr[8], uint8_t id, uint8_t level);
 		uint16_t getLen(uint8_t max, uint16_t elSize);
-		bool actorHandle(union d_adr_8 dst, enum _pio_mode state);
-		bool actorHandle(union pio p, enum _pio_mode state);
 	public:
 		uint8_t mode;
 		uint8_t light_thr;
@@ -199,4 +197,7 @@ class SwitchHandler
 		bool switchHandle(uint8_t busNr, uint8_t adr1, uint8_t latch);
 		bool switchLevel(union pio dst, uint8_t level);
 		bool initialStates();
+		/* Tests are using these */
+		bool actorHandle(union d_adr_8 dst, enum _pio_mode state);
+		bool actorHandle(union pio p, enum _pio_mode state);
 };

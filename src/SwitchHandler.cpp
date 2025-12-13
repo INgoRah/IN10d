@@ -28,7 +28,7 @@ struct _sw_tim_tbl timed_tbl[MAX_TIMED_SWITCH];
 SwitchHandler::SwitchHandler()
 {
 	memset (dim_tbl, 0, sizeof(dim_tbl));
-	
+
 	for (int i = 0; i < MAX_TIMER; i++) {
 		tmr_list[i].secs = 0;
 	}
@@ -194,11 +194,11 @@ void SwitchHandler::saveSwTable(uint8_t vers_force = 0)
 		// vers | res |   len    | tbl ... | ...
 		pos = 4;
 	} else {
-		//  0      1     2       3          4          5     6  7      8 ...    8 + len  
+		//  0      1     2       3          4          5     6  7      8 ...    8 + len
 		// vers | pos | mode | debug | ligthsensor | pins |  len    | tbl ... | timver | timlen | timtbl ...
 		eeprom_update_byte((uint8_t*)0, (uint8_t)3);
 		eeprom_update_byte((uint8_t*)1, (uint8_t)6);
-		//  0      1     2       3          4          5      6 
+		//  0      1     2       3          4          5      6
 		// vers | pos | mode | debug | ligthsensor | pins |  len    | tbl ... | ...
 		eeprom_update_byte((uint8_t*)2, (uint8_t)mode);
 		eeprom_update_byte((uint8_t*)3, (uint8_t)debug);
@@ -1049,6 +1049,7 @@ bool SwitchHandler::alarmHandler(uint8_t busNr)
 				}
 				if (data[5] & 0x88) {
 					Serial.println("Watchdog!");
+					ds->dump();
 				}
 				while (cur_latch != 0 && to > 0) {
 					wdt_reset();
@@ -1066,7 +1067,7 @@ bool SwitchHandler::alarmHandler(uint8_t busNr)
 				if (hum != 0xff)
 					host.addEvent (HUMIDITY_CHANGE, busNr, adr[1], hum);
 #ifdef DEBUG
-				if (debug > 3) {
+				if (debug > 2) {
 					Serial.print(busNr);
 					Serial.print(F("."));
 					Serial.print(adr[1]);

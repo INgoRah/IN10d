@@ -56,6 +56,7 @@ class OneWireBase
 		uint8_t crc8(const uint8_t *addr, uint8_t len);
 		uint16_t crc16(const uint8_t* input, uint16_t len, uint16_t crc);
 		bool check_crc16(const uint8_t* input, uint16_t len, const uint8_t* inverted_crc, uint16_t crc);
+		virtual void dump() {};
 };
 #endif // __cplusplus
 #endif // OneWire_h
