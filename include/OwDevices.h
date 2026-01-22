@@ -15,11 +15,11 @@
 class OwDevices
 {
 	private:
-		OneWireBase *ow;
 		uint8_t	pio_data[MAX_BUS][MAX_ADR];
 		uint8_t dev_vers[MAX_BUS][MAX_ADR];
 
 	public:
+		OneWireBase *ow;
 		OwDevices() {;}
 		void begin(OneWireBase *ds);
 		void cacheInit();

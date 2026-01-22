@@ -1002,9 +1002,6 @@ bool SwitchHandler::alarmHandler(uint8_t busNr)
 		// this could be a timeout or other issue
 		// must be repeated
 		return false;
-	ret = ds->reset();
-	if (!ret)
-		return false;
 	ds->reset_search();
 	while (ds->search(adr, false)) {
 		j++;
@@ -1013,7 +1010,7 @@ bool SwitchHandler::alarmHandler(uint8_t busNr)
 			log_time();
 			Serial.print(busNr);
 			Serial.print(F("@"));
-			for (uint8_t i = 0; i < 8; i++) {
+			for (uint8_t i = 0; i < 6; i++) {
 				if (adr[i] < 0x10)
 					Serial.write('0');
 				Serial.print(adr[i], HEX);
@@ -1048,7 +1045,13 @@ bool SwitchHandler::alarmHandler(uint8_t busNr)
 					host.addEvent (DIMMING_DOWN, busNr, adr[1], 255);
 				}
 				if (data[5] & 0x88) {
-					Serial.println("Watchdog!");
+					uint8_t i;
+					Serial.println("Watchdog! ");
+					for (i = 0; i < 9; i++) {
+						Serial.print(data[i], HEX);
+						Serial.print(F(" "));
+					}
+					Serial.println(data[i], HEX);
 					ds->dump();
 				}
 				while (cur_latch != 0 && to > 0) {

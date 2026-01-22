@@ -183,11 +183,16 @@ pin 2 7 0 e3 250 0
 pin 0 2 0 e3 250 250
 
 threshold
-pin 2 7 0 e5 210 0
-pin 0 2 0 e5 225 0
+pin 2 7 0 e5 236 0
+pin 0 2 0 e5 228 0
 
 cfg 7 w ff ff ff ff 20 ff ff ff ff ff ff 23 02 00 00 ff ff ff ff FC
-cfg 7 w 1 90 20 0 5 2 2 0 21 0 0 0 0 0 0
+             DD
+          E4 20 0 A 6 4
+cfg 7 w 1 e4 28 0 0 3 3 0 21 0 0 0 0 0 0
+= level = 200
+= time = 2 min
+cfg 2 w 1 C0 30 A 3 3 14 0 21 0 0 0 0 0 0
 
         R |R |R |SW 1  2  3  4  5  6  7 |CFG 1 2  3  4  5  6  7 |FEA|OFF|MAJ|MIN|TYP
 cfg 2 w F8 FF FF FF FF FF FF FF 20 FF FF 23 21 21 21 21 02 10 10

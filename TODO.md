@@ -12,6 +12,9 @@ of auto, switch table or host controlled switch
 [ ] Light independed timed switch. Currently timed switches only if dark  
 [ ] Support 16 bit destination address for all PIOs
 [ ] Support timed switch from host
+[ ] Timed switches retrigger/switch. Now every latch retriggers timer, but it could
+    instead switch off again. This needs to be configurable per switch
+[ ] Slave based timer time configurable (needs change in owslave)
 
 # PICO Support
 

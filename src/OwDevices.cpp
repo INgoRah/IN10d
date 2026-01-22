@@ -60,13 +60,13 @@ void OwDevices::begin(OneWireBase *ds)
 void OwDevices::cacheInit()
 {
 	uint8_t adr[8];
+	byte _data[MAX_CFG_SIZE];
 
 	if (debug > 0) {
 		Serial.println(F("Cache and Version update"));
 	}
 	for (int i = 0; i < MAX_BUS; i++) {
 		ow->selectChannel(i);
-		ow->reset();
 		ow->reset_search();
 		// search devs
 		while (ow->search(adr)) {
@@ -80,13 +80,14 @@ void OwDevices::cacheInit()
 						Serial.print(F("."));
 						Serial.println(adr[1], HEX);
 					}
+					ds2408CfgRead(i, adr, _data);
+					dev_vers[i][adr[1]] = _data[22];
 				}
 			}
 		}
 	}
-	versionUpdate(2, 7);
-	versionUpdate(0, 8);
-	versionUpdate(0, 2);
+	//versionUpdate(0, 8);
+	//versionUpdate(0, 2);
 }
 
 void OwDevices::adrGen(uint8_t bus, uint8_t adr[8], uint8_t id)

@@ -31,11 +31,13 @@
 #include "Wire.h"
 #include <CircularBuffer.hpp>
 
+#ifdef EXT_DEBUG
 typedef struct {
 	char  type;
 	uint8_t  val;
 } log_data;
-CircularBuffer<log_data, 140> logger;
+CircularBuffer<log_data, 150> logger;
+#endif /* EXT_DEBUG */
 
 #define PTR_STATUS 0xf0
 #define PTR_READ 0xe1
@@ -258,7 +260,6 @@ bool DS2482::selectChannel(uint8_t channel)
  */
 bool DS2482::reset()
 {
-	logger.push(log_data{'X', ch});
 #if defined(AVRSIM)
 	return true;
 #else
@@ -281,6 +282,9 @@ bool DS2482::reset()
 		last_err += ERR_RESET3;
 		return false;
 	}
+#ifdef EXT_DEBUG
+	logger.push(log_data{'X', ch});
+#endif /* EXT_DEBUG */
 	return stat & DS2482_STATUS_PPD ? true : false;
 #endif
 }
@@ -299,7 +303,9 @@ bool DS2482::reset()
 uint8_t DS2482::write(uint8_t b, uint8_t power)
 {
 	(void)power;
+#ifdef EXT_DEBUG
 	logger.push(log_data{'W', b});
+#endif /* EXT_DEBUG */
 #if !defined(AVRSIM)
 	if (busyWait(true) == DS2482_STATUS_INVAL) {
 		/* err can be 11..18 */
@@ -359,7 +365,9 @@ uint8_t DS2482::read()
 	setReadPtr(PTR_READ);
 #endif
 	d = _read();
+#ifdef EXT_DEBUG
 	logger.push(log_data{'R', d});
+#endif /* EXT_DEBUG */
 
 	return d;
 }
@@ -415,12 +423,16 @@ bool DS2482::search(uint8_t *newAddr, bool search_mode)
 
 	if (search_mode == true) {
 		// NORMAL SEARCH
+#ifdef EXT_DEBUG
 		logger.push(log_data{'S', ch});
+#endif /* EXT_DEBUG */
 		write(OW_SEARCH_ROM);
 	}
 	else {
 		// CONDITIONAL SEARCH
+#ifdef EXT_DEBUG
 		logger.push(log_data{'A', ch});
+#endif /* EXT_DEBUG */
 		write(OW_COND_SEARC_ROM);
 	}
 	if (last_err != ERR_NONE) {
@@ -485,6 +497,7 @@ bool DS2482::search(uint8_t *newAddr, bool search_mode)
 
 void DS2482::dump()
 {
+#ifdef EXT_DEBUG
 	Serial.println(F("Dump DS2482 log:"));
 	for (byte i = 0; i < logger.size(); i++) {
 		// retrieves the i-th element from the buffer without removing it
@@ -497,4 +510,5 @@ void DS2482::dump()
 		Serial.print(F(" "));
 	}
 	Serial.println();
+#endif /* EXT_DEBUG */
 }

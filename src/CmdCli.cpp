@@ -147,6 +147,7 @@ void CmdCli::begin(OwDevices* devs)
 	//cmdCallback.addCmd("log", &funcLog);	// 10
 	//cmdCallback.addCmd("time", &funcTime);
 	//cmdCallback.addCmd("c", &funcCmd);		// 11
+	cmdCallback.addCmd("tst", &funcTst);	// 7
 #ifdef EXT_DEBUG
 	cmdCallback.addCmd("pset", &funcPinSet); // 12
 	cmdCallback.addCmd("pget", &funcPinGet); // 13
@@ -206,7 +207,6 @@ void CmdCli::funcSearch(CmdParser *myParser)
 		Serial.println(F(" =="));
 		wdt_reset();
 		ds->selectChannel(k);
-		ds->reset();
 		ds->reset_search();
 		res = 0;
 		while (ds->search(adr, alarm)) {
@@ -225,6 +225,10 @@ void CmdCli::funcSearch(CmdParser *myParser)
 			Serial.println(F(" devs found"));
 		} else {
 			Serial.println(F("no devs!"));
+		}
+		ds->reset_search();
+		while (ds->search(adr, true)) {
+			; // avoid stuck dev
 		}
 	}
 }
@@ -875,6 +879,12 @@ void CmdCli::funcSwCmd(CmdParser *myParser)
 			break;
 	}
 	me->dumpSwTbl();
+}
+
+void CmdCli::funcTst(CmdParser *myParser)
+{
+	Serial.println("Stress Test");
+	ow->ow->reset();
 }
 
 #ifdef EXT_DEBUG

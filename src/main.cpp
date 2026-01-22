@@ -66,7 +66,7 @@ x - input D3
 #define LED_OFF() digitalWrite(13, 0); \
 					ledOn = 0;
 #define HOST_SLAVE_ADR 0x2f
-#define ALARM_SRCH_RETRY 10
+#define ALARM_SRCH_RETRY 15
 
 byte debug;
 byte pins;
@@ -93,12 +93,15 @@ WireWatchdog wdt0(A0);
 WireWatchdog wdt1(A1);
 WireWatchdog wdt2(A2);
 WireWatchdog wdt3(A3);
+#if MAX_BUS > 3
 WireWatchdog* wdt[MAX_BUS] = { &wdt0, &wdt1, &wdt2, &wdt3 };
+#else
+WireWatchdog* wdt[MAX_BUS] = { &wdt0, &wdt1, &wdt2 };
+#endif
 
 #ifdef CLI_SUPPORT
 CmdCli cli;
 #endif
-
 /*
  * Local variables
  */
@@ -374,7 +377,6 @@ void light_loop()
 
 	if ((millis() - sec_time) < 1000)
 		return;
-
 	sec_time = millis();
 	if (mode == 1 && sec == 2) {
 		/* next second read out conversion results */
@@ -453,6 +455,8 @@ void alarm_loop()
 						Serial.print(i);
 						Serial.print(F(": alarm retry exceeded "));
 						Serial.println(ds->last_err);
+						/* TODO This seem to cause watchdog timeouts on the slaves!
+						because a reset might not be followed by further actions */
 #endif
 						wdr();
 						return;
@@ -482,11 +486,13 @@ void loop()
 		wdr();
 		return;
 	}
-	light_loop();
 	pin_loop();
-	swHdl.loop();
+	if (swHdl.mode & MODE_ALRAM_POLLING)
+		light_loop();
+	if (swHdl.mode & MODE_AUTO_SWITCH)
+		swHdl.loop();
 	alarm_loop();
-	if (millis() - alarmPolling > 2500) {
+	if (millis() - alarmPolling > 2000) {
 		alarmPolling = millis();
 		if (swHdl.mode & MODE_ALRAM_POLLING) {
 			for (byte i = 0; i < MAX_BUS;i++) {
