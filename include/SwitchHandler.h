@@ -15,10 +15,18 @@
 #define MAX_DIMMER 4
 #define DEF_SECS 30
 
-/* modes */
+/* Modes used in combination */
+/* Alarm handling with polling frequently to make sure not
+have missed any alarm. Even without alarm handling
+This searches the 1Wire busses and sets the alarm pin */
 #define MODE_ALRAM_POLLING 0x2
+/* Handle the alarm on a 1Wire bus after alarm search */
 #define MODE_ALRAM_HANDLING 0x4
+/* After handling all alarms, perform switching of PIOs based on the latches */
 #define MODE_AUTO_SWITCH 0x8
+/* Host mode - if set, do not handle any I2C and 1Wire acess.
+This indirectly disables all alarm polling and handling. */
+#define MODE_HOST 0x10
 
 union s_adr {
 	uint16_t data;

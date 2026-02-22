@@ -465,8 +465,21 @@ void alarm_loop()
 				}
 			}
 		}
-	} else
-		host.setAlarm();
+	} else {
+		uint8_t ch = 0;
+		for (byte i = 0; i < MAX_BUS; i++) {
+			if (wdt[i]->alarm) {
+				if (i != 0) {
+					// if there are more than 1 busses signaling alarm
+					// report it as 0xf to the host
+					ch = 0xF;
+				} else {
+					ch = i;
+				}
+			}
+		}
+		host.setAlarm(ch);
+	}
 	alarmSignal--;
 }
 
@@ -478,23 +491,24 @@ void loop()
 		ledBlink();
 	}
 #endif
-	/* if there is any host data transfer, avoid conflicts on the I2C bus
-	 * and skip handling - transfer should be finished very quickly
-	 * within 50 ms
-	 */
-	if (host_lock && ((millis() - host_lock) < 50)) {
-		wdr();
-		return;
+	if ((swHdl.mode & MODE_HOST) == 0) {
+		/* if there is any host data transfer, avoid conflicts on the I2C bus
+		* and skip handling - transfer should be finished very quickly
+		* within 50 ms
+		*/
+		if (host_lock && ((millis() - host_lock) < 50)) {
+			wdr();
+			return;
+		}
 	}
 	pin_loop();
-	if (swHdl.mode & MODE_ALRAM_POLLING)
-		light_loop();
 	if (swHdl.mode & MODE_AUTO_SWITCH)
 		swHdl.loop();
 	alarm_loop();
-	if (millis() - alarmPolling > 2000) {
-		alarmPolling = millis();
-		if (swHdl.mode & MODE_ALRAM_POLLING) {
+	if (swHdl.mode & MODE_ALRAM_POLLING) {
+		light_loop();
+		if (millis() - alarmPolling > 2000) {
+			alarmPolling = millis();
 			for (byte i = 0; i < MAX_BUS;i++) {
 				wdr();
 				swHdl.alarmHandler(i);

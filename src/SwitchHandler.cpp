@@ -1020,7 +1020,7 @@ bool SwitchHandler::alarmHandler(uint8_t busNr)
 		//mode = MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH;
 		if ((mode & MODE_ALRAM_HANDLING) == 0) {
 			// interrupt to host
-			digitalWrite (HOST_ALRM_PIN, LOW);
+			host.setAlarm(busNr);
 			return true;
 		}
 		if (adr[0] == 0x29) {

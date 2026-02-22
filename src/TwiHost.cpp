@@ -13,9 +13,8 @@
 #include "SwitchHandler.h"
 
 #define CMD_RESET               0xF0	/* No param */
-#define CMD_CHANNEL_SELECT      0xC3	/* Param: Channel byte - DS2482-800 only */
 #define CMD_MODE                0x69 /* Param: mode byte */
-#define CMD_SW_CFG             0x6A /* Param: light threshold byte | default dim light on level */
+#define CMD_SW_CFG              0x6A /* Param: light threshold byte | default dim light on level */
 #define CMD_SET_READ_PTR        0xE1	/* Param: DS2482_PTR_CODE_xxx */
 #define CMD_SET_READ_PTR_LOCK	0xE2
 #define CMD_UNLOCK 0xEF
@@ -95,31 +94,30 @@ void TwiHost::setStatus(uint8_t stat)
 	status = stat;
 };
 
-void TwiHost::setAlarm(uint8_t alarm)
+void TwiHost::setAlarm(uint8_t channel)
 {
-	if (alarm) {
+	if (channel) {
 		if (alarmSignal == 0) {
-			alarmSignal = 1;
+			alarmSignal = channel + 1;
 			digitalWrite(13, HIGH);
-			digitalWrite(HOST_ALRM_PIN, LOW);
+		} else {
+			alarmSignal = 0xF;
 		}
+		digitalWrite(HOST_ALRM_PIN, LOW);
 	}
 	else {
 		if (alarmSignal) {
 			alarmSignal = 0;
 			digitalWrite(13, LOW);
-			digitalWrite(HOST_ALRM_PIN, HIGH);
 		}
+		digitalWrite(HOST_ALRM_PIN, HIGH);
 	}
 }
-
 
 uint8_t TwiHost::getStatus()
 {
 	uint8_t stat = status;
 
-	if (host_lock)
-		stat = STAT_LOCK;
 	if (events.size() > 0)
 		stat |= STAT_EVT;
 	return stat;
@@ -182,13 +180,6 @@ void TwiHost::command()
 			setStatus(STAT_PROCESSING);
 			dst.data = 0;
 			if (rxBytes < 4 && debug > 0) {
-#ifdef EXT_DEBUG
-				Serial.print(F("rx cnt="));
-				Serial.println(rxBytes);
-				Serial.print(F("avail="));
-				Serial.println(Wire.available());
-				Serial.println(F("invalid"));
-#endif
 				host.setStatus(STAT_FAIL);
 				return;
 			}
@@ -252,19 +243,14 @@ void TwiHost::loop()
 	}
 	if (rxBytes > 0) {
 		/* should never happen */
-#ifdef EXT_DEBUG
-		if (debug > 0) {
-			Serial.print (F("Data not handled: "));
-			Serial.print (Wire.available());
-		}
-#endif
 		if (Wire.available()) {
 			(void)Wire.read();
-			}
+		}
 		rxBytes = 0;
 	}
-	if (host.events.size() > 0 || _ack != _seq) {
-		digitalWrite(HOST_ALRM_PIN, LOW);
+	if ((swHdl.mode & MODE_HOST) == 0) {
+		if (host.events.size() > 0 || _ack != _seq)
+			digitalWrite(HOST_ALRM_PIN, LOW);
 	}
 }
 
@@ -275,6 +261,7 @@ extern uint8_t hour;
 void TwiHost::addEvent(uint8_t type, uint16_t source, uint16_t data)
 {
 	struct logData d;
+
 
 	// put into fifo
 	d.type = type;
@@ -296,7 +283,9 @@ void TwiHost::addEvent(uint8_t type, uint16_t source, uint16_t data)
 void TwiHost::addEvent(uint8_t type, uint8_t bus, uint8_t adr, uint16_t data)
 {
 	union s_adr src;
-
+	if (swHdl.mode & MODE_HOST && type == POWER_IMP) {
+		alarmSignal |= STAT_POWER_IMP;
+ 	}
 	src.data = 0;
 	src.sa.bus = bus;
 	src.sa.adr = adr;
@@ -384,13 +373,6 @@ void TwiHost::receiveEvent(int howMany) {
 		host.setStatus(STAT_OK);
 		cmd = 0xff;
 		break;
-#if 0
-	case CMD_CHANNEL_SELECT:
-		reg = DS2482_CHANNEL_SELECTION_REGISTER;
-		d = Wire.read() & 0x0f;
-		user_onCommand(d, d);
-		break;
-#endif
 	case CMD_UNLOCK:
 		host_lock = 0;
 		break;
@@ -416,6 +398,10 @@ void TwiHost::receiveEvent(int howMany) {
 		break;
 	case CMD_MODE:
 		swHdl.mode = Wire.read();
+		if (swHdl.mode & MODE_HOST)
+			// host mode must deactivate auto switch and alarm handling
+			// to avoid conflicts on the I2C bus.
+			swHdl.mode = MODE_HOST;
 		break;
 	case CMD_SW_CFG:
 		swHdl.light_thr = Wire.read();
@@ -488,6 +474,7 @@ void TwiHost::requestEvent()
 	case DS2482_ALARM_STATUS_REGISTER:
 		{
 			uint8_t stat = host.alarmSignal;
+			digitalWrite(HOST_ALRM_PIN, LOW);
 			if (host.events.size() > 0) {
 				stat |= STAT_EVT;
 			}
