@@ -12,9 +12,6 @@
 #define DS2482_STATUS_REGISTER         0xE1
 
 #define STAT_OK 	0x0
-#define STAT_PROCESSING 	0x2
-#define STAT_NOPE 	0x03
-#define STAT_WRONG 	0x05
 /* ready to service data */
 #define STAT_READY 	0x04
 #define STAT_FAIL 	0xCC

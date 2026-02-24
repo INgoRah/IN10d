@@ -196,8 +196,8 @@ void setup() {
 	host.addEvent (SYS_START, 0, 9, 0);
 	check_light(0);
 	wdt_reset();
-	delay(500);
-	check_light(1);
+	delay(200);
+	check_light(0xff);
 }
 
 #if 0
@@ -338,34 +338,29 @@ static void check_light(byte mode)
 		// filter out minor change
 	} else
 #endif /* INTERN_PIOS */
-	if (ow.getVersion(0,2) > 7) {
-		adr[0] = 0x20;
-		ow.adrGen(0, adr, 2);
-		t = ow.adcRead(0, adr, 1, mode);
-		if (mode == 0)
-			// just start conversion
-			return;
-	} else
+	adr[0] = 0x20;
+	ow.adrGen(0, adr, 2);
+	t = ow.adcRead(0, adr, 1, mode);
+	if (mode == 0)
+		// just start conversion
 		return;
 
 	// filter out minor change
 	t = (t >> 2) & 0xFC;
 	// average the last 4 measurements
 	t = (3 * light + t) / 4;
-	if (light != t) {
+	if (light != t || mode == 0xff) {
 		light = t;
-		if (ow.getVersion(2,7) > 6) {
-			// inform 2.7
-			adr[0] = 0x29;
-			ow.adrGen(2, adr, 7);
-			if (debug > 3) {
-				Serial.print(F(" update light="));
-				Serial.println(light);
-			}
-			ow.ds2408xPinSet(2, adr, 0, 0, 0xE3, light);
-			// force polling (if watchdog happend)
-			alarmPolling = 0;
+		// inform 2.7
+		adr[0] = 0x29;
+		ow.adrGen(2, adr, 7);
+		if (debug > 3) {
+			Serial.print(F(" update light="));
+			Serial.println(light);
 		}
+		ow.ds2408xPinSet(2, adr, 0, 0, 0xE3, light);
+		// force polling (if watchdog happend)
+		alarmPolling = 0;
 		host.addEvent (TYPE_BRIGHTNESS, 0, 9, light);
 	}
 }

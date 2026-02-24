@@ -177,7 +177,7 @@ void TwiHost::command()
 
 			host_lock = 0;
 
-			setStatus(STAT_PROCESSING);
+			setStatus(STAT_BUSY);
 			dst.data = 0;
 			if (rxBytes < 4 && debug > 0) {
 				host.setStatus(STAT_FAIL);
@@ -208,7 +208,7 @@ void TwiHost::command()
 			if (swHdl.switchLevel(dst, level))
 				setStatus(STAT_OK);
 			else {
-				setStatus(STAT_NOPE);
+				setStatus(STAT_FAIL);
 #ifdef DEBUG
 				log_time();
 				printDst(dst);
@@ -336,7 +336,7 @@ void TwiHost::handleAck(uint8_t ack)
 #endif
 		setStatus(STAT_OK);
 	} else {
-		setStatus(STAT_WRONG);
+		setStatus(STAT_FAIL);
 #ifdef EXT_DEBUG
 		if (debug > 0) {
 			log_time();
@@ -463,7 +463,7 @@ void TwiHost::requestEvent()
 			val = host.getStatus();
 			Wire.write(val);
 			rdPos = rdLen;
-			host.status = STAT_READY;
+			host.setStatus(STAT_OK);
 		}
 		else {
 			host.setStatus(STAT_NO_DATA);
