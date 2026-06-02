@@ -17,11 +17,11 @@
 #define CMD_SW_CFG              0x6A /* Param: light threshold byte | default dim light on level */
 #define CMD_SET_READ_PTR        0xE1	/* Param: DS2482_PTR_CODE_xxx */
 #define CMD_SET_READ_PTR_LOCK	0xE2
-#define CMD_UNLOCK 0xEF
-#define CMD_DATA 0x96
-#define CMD_TIME 0x40
-#define CMD_EVT_DATA 0x01
-#define CMD_REBOOT 0xDE
+#define CMD_UNLOCK 				0xEF
+#define CMD_DATA 				0x96
+#define CMD_TIME 				0x40
+#define CMD_EVT_DATA 			0x01
+#define CMD_TEST 				0xDE
 /** Acknowledge event data reception with the id. This will only remove
  * it from the reporting queue
  */
@@ -31,7 +31,7 @@
 extern TwiHost host;
 extern SwitchHandler swHdl;
 
-extern byte alarmSignal, wdFired, ledOn;
+extern byte wdFired, ledOn;
 extern unsigned long ledOnTime;
 
 unsigned long host_lock = 0;
@@ -97,20 +97,29 @@ void TwiHost::setStatus(uint8_t stat)
 void TwiHost::setAlarm(uint8_t channel)
 {
 	if (channel) {
-		if (alarmSignal == 0) {
-			alarmSignal = channel + 1;
-			digitalWrite(13, HIGH);
-		} else {
-			alarmSignal = 0xF;
-		}
+		if (swHdl.mode & MODE_HOST)
+			reg = DS2482_ALARM_STATUS_REGISTER;
+		alarmStat |= channel;
 		digitalWrite(HOST_ALRM_PIN, LOW);
+		digitalWrite(13, HIGH);
+#ifdef DEBUG
+		if (debug > 4) {
+			Serial.print(F("Ch="));
+			Serial.println(channel, HEX);
+			Serial.print(F("AlarmStat="));
+			Serial.println(alarmStat, HEX);
+		}
+#endif
 	}
 	else {
-		if (alarmSignal) {
-			alarmSignal = 0;
+#ifdef DEBUG
+			if (alarmStat && debug > 4) {
+				Serial.println(F("clear alarmStat"));
+			}
+			alarmStat = 0;
+			digitalWrite(HOST_ALRM_PIN, HIGH);
 			digitalWrite(13, LOW);
-		}
-		digitalWrite(HOST_ALRM_PIN, HIGH);
+#endif
 	}
 }
 
@@ -284,7 +293,7 @@ void TwiHost::addEvent(uint8_t type, uint8_t bus, uint8_t adr, uint16_t data)
 {
 	union s_adr src;
 	if (swHdl.mode & MODE_HOST && type == POWER_IMP) {
-		alarmSignal |= STAT_POWER_IMP;
+		alarmStat |= STAT_POWER_IMP;
  	}
 	src.data = 0;
 	src.sa.bus = bus;
@@ -353,6 +362,7 @@ void TwiHost::handleAck(uint8_t ack)
 // this function is registered as an event, see setup()
 void TwiHost::receiveEvent(int howMany) {
 	byte d;
+	byte tst;
 
 	if (howMany < 1) {
 		return;
@@ -364,11 +374,16 @@ void TwiHost::receiveEvent(int howMany) {
 	/* assert if not at least 1? */
 	switch (d)
 	{
-	case CMD_REBOOT:
+	case CMD_TEST:
+		tst = Wire.read();
+		if (tst == 0) {
 #ifdef EXT_DEBUG
-		Serial.print (F("Forced Reset..."));
+				Serial.print (F("Forced Reset..."));
 #endif
-		while (1);
+				while (1);
+		}
+		test_mode = tst;
+		break;
 	case CMD_RESET:
 		host.setStatus(STAT_OK);
 		cmd = 0xff;
@@ -398,10 +413,12 @@ void TwiHost::receiveEvent(int howMany) {
 		break;
 	case CMD_MODE:
 		swHdl.mode = Wire.read();
-		if (swHdl.mode & MODE_HOST)
+		if (swHdl.mode & MODE_HOST) {
 			// host mode must deactivate auto switch and alarm handling
 			// to avoid conflicts on the I2C bus.
 			swHdl.mode = MODE_HOST;
+			reg = DS2482_ALARM_STATUS_REGISTER;
+		}
 		break;
 	case CMD_SW_CFG:
 		swHdl.light_thr = Wire.read();
@@ -473,12 +490,12 @@ void TwiHost::requestEvent()
 		break;
 	case DS2482_ALARM_STATUS_REGISTER:
 		{
-			uint8_t stat = host.alarmSignal;
-			digitalWrite(HOST_ALRM_PIN, LOW);
+			uint8_t stat = host.alarmStat;
+			//digitalWrite(HOST_ALRM_PIN, LOW);
 			if (host.events.size() > 0) {
 				stat |= STAT_EVT;
 			}
-			Wire.write((uint8_t)(stat /*| (wdFired << 1)*/ ));
+			Wire.write((uint8_t)(stat));
 			host.setAlarm(0);
 #if 0
 			if (wdFired) {

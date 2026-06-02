@@ -883,6 +883,7 @@ void CmdCli::funcSwCmd(CmdParser *myParser)
 
 void CmdCli::funcTst(CmdParser *myParser)
 {
+	(void)myParser;
 	Serial.println("Stress Test");
 	ow->ow->reset();
 }

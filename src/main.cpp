@@ -70,6 +70,7 @@ x - input D3
 
 byte debug;
 byte pins;
+byte test_mode;
 
 /*
  * Objects
@@ -156,9 +157,13 @@ void setup() {
 	// reads also mode and debug
 	swHdl.begin(ds);
 	if (pins & 0x1)
-		pinMode(4, INPUT_PULLUP);
+		pinMode(2, INPUT_PULLUP);
 	if (pins & 0x2)
-		pinMode(3, INPUT);
+		pinMode(4, INPUT_PULLUP);
+	if (pins & 0x4)
+		pinMode(3, INPUT_PULLUP);
+	if (pins & 0x8)
+		pinMode(7, INPUT_PULLUP);
 	byte mask = 0x10;
 	for (i = 9; i < 13; i++) {
 		if (pins & mask) {
@@ -171,9 +176,18 @@ void setup() {
 	PCMSK0 |= (_BV(PCINT0));
 	/* enable interrupts for the 1-wire monitor */
 	PCMSK1 |= (_BV(PCINT8) | _BV(PCINT9) | _BV(PCINT10) | _BV(PCINT11));
-	if (pins != 0) {
-		/* enable interupts on PD2, PD3, PD7 (4, 7) (= D2, D3, D4, D7) */
-		PCMSK2 |= (_BV(PCINT18) | _BV(PCINT19) | _BV(PCINT23) /*| _BV(PCINT20) */);
+	if (pins & 0x1)
+		// PD2
+		PCMSK2 |= _BV(PCINT18);
+	if (pins & 0x2)
+		// PD4
+		PCMSK2 |= _BV(PCINT20);
+	if (pins & 0x4)
+		// PD3
+		PCMSK2 |= _BV(PCINT19);
+	if (pins & 0x08) {
+		/* enable interupts on PD7 = D7) */
+		PCMSK2 |= _BV(PCINT23);
 	}
 	PCIFR = _BV(PCIF0) | _BV(PCIF1) | _BV(PCIF2); // clear any outstanding interrupt
 	PCICR = _BV(PCIE0) | _BV(PCIE1) | _BV(PCIE2); // enable interrupt for the group
@@ -256,7 +270,6 @@ ISR (PCINT1_vect) // handle pin change interrupt for A0 to A4 here
 			alarmSignal++;
 #ifdef EXT_DEBUG
 			ledOnTime = millis();
-			LED_ON();
 #endif
 		}
 	}
@@ -464,12 +477,12 @@ void alarm_loop()
 		uint8_t ch = 0;
 		for (byte i = 0; i < MAX_BUS; i++) {
 			if (wdt[i]->alarm) {
-				if (i != 0) {
+				if (ch != 0) {
 					// if there are more than 1 busses signaling alarm
 					// report it as 0xf to the host
 					ch = 0xF;
 				} else {
-					ch = i;
+					ch = i + 1;
 				}
 			}
 		}
@@ -495,6 +508,10 @@ void loop()
 			wdr();
 			return;
 		}
+	}
+	if (test_mode) {
+		test_mode = 0;
+		host.addEvent (POWER_IMP, 0, 9, pow_imp);
 	}
 	pin_loop();
 	if (swHdl.mode & MODE_AUTO_SWITCH)
