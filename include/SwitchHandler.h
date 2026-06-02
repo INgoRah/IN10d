@@ -7,18 +7,26 @@
 #define MAX_SWITCHES 4
 #define MAX_TIMED_SWITCH 3
 #else
-#define MAX_TIMER 6
-/* per bus 12 addresses and each 5 latches, sometimes long presses additionally */
-#define MAX_SWITCHES MAX_BUS * 12 * 5
-#define MAX_TIMED_SWITCH 10
+#define MAX_TIMER 5
+/* per bus 8 addresses and each 5 latches, sometimes long presses additionally */
+#define MAX_SWITCHES MAX_BUS * 6 * 5
+#define MAX_TIMED_SWITCH 6
 #endif
 #define MAX_DIMMER 4
 #define DEF_SECS 30
 
-/* modes */
+/* Modes used in combination */
+/* Alarm handling with polling frequently to make sure not
+have missed any alarm. Even without alarm handling
+This searches the 1Wire busses and sets the alarm pin */
 #define MODE_ALRAM_POLLING 0x2
+/* Handle the alarm on a 1Wire bus after alarm search */
 #define MODE_ALRAM_HANDLING 0x4
+/* After handling all alarms, perform switching of PIOs based on the latches */
 #define MODE_AUTO_SWITCH 0x8
+/* Host mode - if set, do not handle any I2C and 1Wire acess.
+This indirectly disables all alarm polling and handling. */
+#define MODE_HOST 0x10
 
 union s_adr {
 	uint16_t data;
@@ -79,6 +87,11 @@ struct _sw_tbl {
 	union d_adr_8 dst;
 };
 
+struct _sw_tbl16 {
+	union s_adr src;
+	union pio dst;
+};
+
 enum tim_type {
 	/** Timer always, hard off per time */
 	TYPE_DEF,
@@ -102,22 +115,23 @@ enum tim_type {
 	TYPE_DARK_15MIN	/* 16 */,
 	TYPE_DARK_30MIN	/* 17 */,
 	TYPE_DARK_1H 	/* 18 */,
+#ifdef SOFTOFF_SUPPORT
 	/** Timer on darkness with soft off per time
 	 *  if supported (dimmable), time 5 secs */
 	TYPE_DARK_SOFT = 20,
-	TYPE_DARK_SOFT_20S		/* 21 */,
-	TYPE_DARK_SOFT_30S		/* 21 */,
-	TYPE_DARK_SOFT_1MIN		/* 22 */,
-	TYPE_DARK_SOFT_2MIN		/* 23 */,
-	TYPE_DARK_SOFT_5MIN		/* 24 */,
-	TYPE_DARK_SOFT_10MIN	/* 25 */,
-	TYPE_DARK_SOFT_15MIN	/* 26 */,
-	TYPE_DARK_SOFT_30MIN	/* 27 */,
-	TYPE_DARK_SOFT_1H 		/* 28 */,
-	TYPE_DARK_SOFT_INVAL	/* 29 */,
+	TYPE_DARK_SOFT_20S	/* 21 */,
+	TYPE_DARK_SOFT_30S	/* 22 */,
+	TYPE_DARK_SOFT_1MIN	/* 23 */,
+	TYPE_DARK_SOFT_2MIN	/* 24 */,
+	TYPE_DARK_SOFT_5MIN	/* 25 */,
+	TYPE_DARK_SOFT_10MIN	/* 26 */,
+	TYPE_DARK_SOFT_15MIN	/* 27 */,
+	TYPE_DARK_SOFT_30MIN	/* 28 */,
+	TYPE_DARK_SOFT_1H 	/* 29 */,
+#endif
 	/** Timer on darkness with blinking off per time */
 	TYPE_DARK_BLINK = 30,
-	TYPE_DARK_BLINK_30S		/* 31 */,
+	TYPE_DARK_BLINK_30S	/* 31 */,
 	TYPE_DARK_BLINK_1MIN	/* 32 */,
 	TYPE_DARK_BLINK_2MIN	/* 33 */,
 	TYPE_DARK_BLINK_5MIN	/* 34 */,
@@ -150,6 +164,7 @@ enum _pio_mode {
 extern struct _sw_tbl sw_tbl[MAX_SWITCHES];
 extern struct _sw_tim_tbl timed_tbl[MAX_TIMED_SWITCH];
 extern struct _dim_tbl dim_tbl[MAX_DIMMER];
+extern struct _sw_tbl16 sw_tbl16[2];
 
 class SwitchHandler
 {
@@ -165,27 +180,32 @@ class SwitchHandler
 		uint8_t getType(union pio dst);
 		uint8_t bitnumber();
 		bool timerUpdate(union d_adr_8 dst, uint8_t typ);
+#ifdef SOFTOFF_SUPPORT
 		uint8_t dimDown(struct _timer_item* tmr);
+#endif
 		uint8_t dimLevel(union pio dst, uint8_t* id);
 		uint8_t dimLevel(union d_adr_8 dst, uint8_t* id);
-		bool switchLevelStep(union pio dst, uint8_t level);
 		bool setPio(union pio dst, uint8_t adr[8], uint8_t d, enum _pio_mode state);
-		bool setLevel(union pio dst, uint8_t adr[8], uint8_t* d, uint8_t id, uint8_t level);
+		bool setLevel(union pio dst, uint8_t adr[8], uint8_t id, uint8_t level);
+		uint16_t getLen(uint8_t max, uint16_t elSize);
 	public:
 		uint8_t mode;
 		uint8_t light_thr;
 		uint8_t dim_on_lvl;
+		uint8_t tbl_vers;
 		SwitchHandler();
 		SwitchHandler(OwDevices* devs);
 		void status();
-		bool actorHandle(union d_adr_8 dst, enum _pio_mode state);
 		void begin(OneWireBase *ow);
 		void loop();
 		void initSwTable();
-		void saveSwTable();
+		void saveSwTable(uint8_t vers_force);
 		bool alarmHandler(uint8_t busNr);
 		bool switchHandle(uint8_t busNr, uint8_t adr1);
 		bool switchHandle(uint8_t busNr, uint8_t adr1, uint8_t latch);
 		bool switchLevel(union pio dst, uint8_t level);
 		bool initialStates();
+		/* Tests are using these */
+		bool actorHandle(union d_adr_8 dst, enum _pio_mode state);
+		bool actorHandle(union pio p, enum _pio_mode state);
 };

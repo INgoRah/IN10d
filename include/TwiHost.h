@@ -2,7 +2,7 @@
 #define _TWIHOST_H
 
 #include <Arduino.h>       // for delayMicroseconds, digitalPinToBitMask, etc
-#include "CircularBuffer.h"
+#include "CircularBuffer.hpp"
 
 #define MODE_WATCHDOG 0x1
 #define HOST_ALRM_PIN 6
@@ -12,17 +12,15 @@
 #define DS2482_STATUS_REGISTER         0xE1
 
 #define STAT_OK 	0x0
-#define STAT_BUSY 	0x01
-#define STAT_PROCESSING 	0x2
-#define STAT_NOPE 	0x03
-#define STAT_WRONG 	0x05
 /* ready to service data */
 #define STAT_READY 	0x04
 #define STAT_FAIL 	0xCC
 
-#define STAT_LOCK 0x20
+#define STAT_POWER_IMP 0x10
+#define STAT_START 0x20
 #define STAT_EVT  	0x40
 #define STAT_NO_DATA 0x80
+#define STAT_BUSY 	0xC0
 
 /** Alarm status register read will clear the alarm line, the
  * watchdog and returns the current alarm status
@@ -79,7 +77,7 @@ class TwiHost
 		TwiHost();
 		void setStatus(uint8_t stat);
 		uint8_t getStatus();
-		void setAlarm(uint8_t alarm = 1);
+		void setAlarm(uint8_t channel = 0xF);
 		void addEvent(uint8_t type, uint16_t source, uint16_t data = 0);
 		void addEvent(uint8_t type, uint8_t bus, uint8_t adr, uint16_t data);
 		void addEvent(union pio dst, uint16_t data = 0, uint8_t type = DST_CHANGE);

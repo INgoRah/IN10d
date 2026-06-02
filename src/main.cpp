@@ -66,9 +66,10 @@ x - input D3
 #define LED_OFF() digitalWrite(13, 0); \
 					ledOn = 0;
 #define HOST_SLAVE_ADR 0x2f
-#define ALARM_SRCH_RETRY 10
+#define ALARM_SRCH_RETRY 15
 
 byte debug;
+byte pins;
 
 /*
  * Objects
@@ -82,7 +83,6 @@ OneWireBase *ds = &ds1;
 uint8_t sec;
 uint8_t min;
 uint8_t hour;
-uint8_t sun;
 uint8_t light;
 byte light_sensor = 1;
 uint16_t pow_imp;
@@ -93,12 +93,15 @@ WireWatchdog wdt0(A0);
 WireWatchdog wdt1(A1);
 WireWatchdog wdt2(A2);
 WireWatchdog wdt3(A3);
+#if MAX_BUS > 3
 WireWatchdog* wdt[MAX_BUS] = { &wdt0, &wdt1, &wdt2, &wdt3 };
+#else
+WireWatchdog* wdt[MAX_BUS] = { &wdt0, &wdt1, &wdt2 };
+#endif
 
 #ifdef CLI_SUPPORT
 CmdCli cli;
 #endif
-
 /*
  * Local variables
  */
@@ -119,7 +122,7 @@ uint8_t *hostBuf = NULL;
 static void ledBlink();
 unsigned long ledOnTime = 0;
 #endif
-static void check_light();
+static void check_light(byte mode);
 void light_loop();
 void pin_loop();
 void alarm_loop();
@@ -132,23 +135,17 @@ void setup() {
 	/* the watchdog timer remains active even after a system reset (except a
 	 * power-on condition), using the fastest prescaler value.
 	 * It is therefore required to turn off the watchdog early
-     * during program startup */
+	 * during program startup */
 	MCUSR = 0;
 	wdt_disable();
 	Serial.begin(115200);
 
 	debug = 3;
+	pins = 0xff;
 	Serial.print(F("IN10D "));
-	Serial.print(F(VERS_TAG));
+	Serial.println(F(VERS_TAG));
 	//digitalWrite(3, 1);
 	//pinMode(3, OUTPUT);
-	pinMode(4, INPUT_PULLUP);
-	pinMode(3, INPUT);
-	for (i = 9; i < 13; i++) {
-		digitalWrite(i, HIGH);
-		pinMode(i, OUTPUT);
-	}
-
 	delay (10);
 	// host.onCommand(hostCommand);
 	host.begin (HOST_SLAVE_ADR);
@@ -156,21 +153,35 @@ void setup() {
 	wdFired = 0;
 #endif
 	ow.begin(ds);
-	//Wire.setWireTimeout(250, true);
+	// reads also mode and debug
 	swHdl.begin(ds);
+	if (pins & 0x1)
+		pinMode(4, INPUT_PULLUP);
+	if (pins & 0x2)
+		pinMode(3, INPUT);
+	byte mask = 0x10;
+	for (i = 9; i < 13; i++) {
+		if (pins & mask) {
+			digitalWrite(i, HIGH);
+			pinMode(i, OUTPUT);
+		}
+		mask = mask << 1;
+	}
 	/* enable interupts on PB0 (= D8), Power impulse */
 	PCMSK0 |= (_BV(PCINT0));
 	/* enable interrupts for the 1-wire monitor */
 	PCMSK1 |= (_BV(PCINT8) | _BV(PCINT9) | _BV(PCINT10) | _BV(PCINT11));
-	/* enable interupts on PD2, PD3, PD7 (4, 7) (= D2, D3, D4, D7) */
-	PCMSK2 |= (_BV(PCINT18) | _BV(PCINT19) | _BV(PCINT23) /*| _BV(PCINT20) */);
+	if (pins != 0) {
+		/* enable interupts on PD2, PD3, PD7 (4, 7) (= D2, D3, D4, D7) */
+		PCMSK2 |= (_BV(PCINT18) | _BV(PCINT19) | _BV(PCINT23) /*| _BV(PCINT20) */);
+	}
 	PCIFR = _BV(PCIF0) | _BV(PCIF1) | _BV(PCIF2); // clear any outstanding interrupt
 	PCICR = _BV(PCIE0) | _BV(PCIE1) | _BV(PCIE2); // enable interrupt for the group
-
 	delay (50);
 #if 0
 	wdTime = millis();
 #endif
+	dumpCfg();
 #ifdef CLI_SUPPORT
 	cli.begin(&ow);
 #endif
@@ -182,15 +193,14 @@ void setup() {
 	swHdl.initialStates();
 	// poll as soon as possible
 	alarmPolling = 0;
-	debug = 0;
 	host.addEvent (SYS_START, 0, 9, 0);
-	// init light
-	light = analogRead(A6);
-	ADCSRA = 0;
-	light = (light >> 2) & 0xFE;
+	check_light(0);
+	wdt_reset();
+	delay(200);
+	check_light(0xff);
 }
 
-#if 1
+#if 0
 ISR(WDT_vect, ISR_NAKED)
 {
 	uint8_t *upStack;
@@ -298,21 +308,59 @@ static void ledBlink()
 }
 #endif
 
-const int SENSOR_MAX_RANGE = 500; // in cm
-unsigned long duration;
-unsigned int distance;
+void dumpCfg()
+{
+	Serial.print(F(" mode="));
+	Serial.print(swHdl.mode);
+	Serial.print(F(" debug="));
+	Serial.print(debug);
+	Serial.print(F(" light thr ="));
+	Serial.print(swHdl.light_thr);
+	Serial.print(F(" light sensor="));
+	Serial.print(light_sensor);
+	Serial.print(F(" pins="));
+	Serial.print(pins, HEX);
+	Serial.print(F(" light="));
+	Serial.print(light);
+}
 
-static void check_light()
+static void check_light(byte mode)
 {
 	uint16_t t;
+	uint8_t adr[8];
 
-	ADCSRA = (1<<ADPS2) | (1<<ADPS1) | (1<<ADEN);
-	_delay_us (150);
-	t = analogRead(A6);
-	ADCSRA = 0;
-	t = (t >> 2) & 0xFE;
-	if (light != t) {
-		light = (4 * light + t) / 5;;
+#ifdef INTERN_PIOS
+	if (light_sensor) {
+		ADCSRA = (1<<ADPS2) | (1<<ADPS1) | (1<<ADEN);
+		_delay_us (150);
+		t = analogRead(A6);
+		ADCSRA = 0;
+		// filter out minor change
+	} else
+#endif /* INTERN_PIOS */
+	adr[0] = 0x20;
+	ow.adrGen(0, adr, 2);
+	t = ow.adcRead(0, adr, 1, mode);
+	if (mode == 0)
+		// just start conversion
+		return;
+
+	// filter out minor change
+	t = (t >> 2) & 0xFC;
+	// average the last 4 measurements
+	t = (3 * light + t) / 4;
+	if (light != t || mode == 0xff) {
+		light = t;
+		// inform 2.7
+		adr[0] = 0x29;
+		ow.adrGen(2, adr, 7);
+		if (debug > 3) {
+			Serial.print(F(" update light="));
+			Serial.println(light);
+		}
+		ow.ds2408xPinSet(2, adr, 0, 0, 0xE3, light);
+		// force polling (if watchdog happend)
+		alarmPolling = 0;
 		host.addEvent (TYPE_BRIGHTNESS, 0, 9, light);
 	}
 }
@@ -320,19 +368,27 @@ static void check_light()
 void light_loop()
 {
 	static unsigned long sec_time = 0;
+	static uint8_t mode = 0;
 
 	if ((millis() - sec_time) < 1000)
 		return;
-
 	sec_time = millis();
+	if (mode == 1 && sec == 2) {
+		/* next second read out conversion results */
+		check_light(1);
+		mode = 0;
+	}
 	if (sec++ == 60) {
 		sec = 0;
-		if (light_sensor)
-			check_light();
 		if (min++ == 60) {
 			min = 0;
 			if (hour++ == 24)
 				hour = 0;
+		}
+		// check brightness every 10 mins
+		if ((min % 5) == 0 && mode == 0) {
+			check_light(0);
+			mode = 1;
 		}
 	}
 }
@@ -342,23 +398,22 @@ void pin_loop()
 	if (pinSignal == 0)
 		return;
 #ifdef DEBUG
-	if (debug > 3) {
+	if (debug > 4) {
 		Serial.print(F("PIN Signal: "));
 		Serial.println(pinSignal);
 	}
 #endif
+
+#ifdef INTERN_PIOS
 	// interrupt to host
-	if (pinSignal & 0x1)
-		swHdl.switchHandle(0, 9, 1);
-	if (pinSignal & 0x2)
-		swHdl.switchHandle(0, 9, 0x2);
-	if (pinSignal & 0x4)
-		swHdl.switchHandle(0, 9, 0x4);
-#if 0
-	if (pinSignal & 0x4)
-		swHdl.switchHandle(0, 9, 0x8);
-#endif
-	if (pinSignal & 0x8) {
+	if (pinSignal & 0x1 && pins & 0x1)
+		swHdl.switchHandle(0, 0, 1);
+	if (pinSignal & 0x2 && pins & 0x2)
+		swHdl.switchHandle(0, 0, 0x2);
+	if (pinSignal & 0x4 && pins & 0x4)
+		swHdl.switchHandle(0, 0, 0x4);
+#endif /* INTERN_PIOS */
+	if (pinSignal & 0x8 && pins & 0x8) {
 		pow_imp++;
 		host.addEvent (POWER_IMP, 0, 9, pow_imp);
 	}
@@ -370,7 +425,6 @@ void alarm_loop()
 	if (!alarmSignal)
 		return;
 	alarmPolling = millis();
-	//host.setAlarm();
 	/* the alarmhandler will set the alarm signal to the host
 		after the event data is prepared. Otherwise a host could
 		disturb our switching process */
@@ -396,6 +450,8 @@ void alarm_loop()
 						Serial.print(i);
 						Serial.print(F(": alarm retry exceeded "));
 						Serial.println(ds->last_err);
+						/* TODO This seem to cause watchdog timeouts on the slaves!
+						because a reset might not be followed by further actions */
 #endif
 						wdr();
 						return;
@@ -404,8 +460,21 @@ void alarm_loop()
 				}
 			}
 		}
-	} else
-		host.setAlarm();
+	} else {
+		uint8_t ch = 0;
+		for (byte i = 0; i < MAX_BUS; i++) {
+			if (wdt[i]->alarm) {
+				if (i != 0) {
+					// if there are more than 1 busses signaling alarm
+					// report it as 0xf to the host
+					ch = 0xF;
+				} else {
+					ch = i;
+				}
+			}
+		}
+		host.setAlarm(ch);
+	}
 	alarmSignal--;
 }
 
@@ -417,21 +486,24 @@ void loop()
 		ledBlink();
 	}
 #endif
-	/* if there is any host data transfer, avoid conflicts on the I2C bus
-	 * and skip handling - transfer should be finished very quickly
-	 * within 50 ms
-	 */
-	if (host_lock && ((millis() - host_lock) < 50)) {
-		wdr();
-		return;
+	if ((swHdl.mode & MODE_HOST) == 0) {
+		/* if there is any host data transfer, avoid conflicts on the I2C bus
+		* and skip handling - transfer should be finished very quickly
+		* within 50 ms
+		*/
+		if (host_lock && ((millis() - host_lock) < 50)) {
+			wdr();
+			return;
+		}
 	}
-	light_loop();
 	pin_loop();
-	swHdl.loop();
+	if (swHdl.mode & MODE_AUTO_SWITCH)
+		swHdl.loop();
 	alarm_loop();
-	if (millis() - alarmPolling > 3000) {
-		alarmPolling = millis();
-		if (swHdl.mode & MODE_ALRAM_POLLING) {
+	if (swHdl.mode & MODE_ALRAM_POLLING) {
+		light_loop();
+		if (millis() - alarmPolling > 2000) {
+			alarmPolling = millis();
 			for (byte i = 0; i < MAX_BUS;i++) {
 				wdr();
 				swHdl.alarmHandler(i);

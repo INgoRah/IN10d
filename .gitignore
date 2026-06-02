@@ -1,8 +1,6 @@
 .pio
-.vscode/.browse.c_cpp.db*
-.vscode/ipch
 .vscode/*
-.vscode/*.json
+src/.vscode/*
 include/version.h
 Notes.md
 *.code-workspace

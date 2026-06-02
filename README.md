@@ -9,18 +9,9 @@ Arduino 1-Wire Homeautomation Base
 [x] Switch with same dst does not clear timer if running.
 [x] Log latch and switch
 
-# Bugs
-    Pressing a button to permanently switch on light is not working
-    setting level = 100 turns light off
-
-# TodDo
-[ ] (ongoing) Timer based on light with configurable threshold
-[ ] Custom timer time per switch
-[ ] (ongoing) Host IF for status read
-[ ] Light independed timed switch. Currently timed switches only if dark
 # Documentation
 
-# Build
+## Build
 Create a post_extra_script.py to copy over to PI:
 Import("env", "projenv")
 env.AddPostAction(
@@ -35,15 +26,11 @@ Build using PlatformIO: %USERPROFILE%\.platformio\penv\Scripts\platformio.exe ru
 
 Debugging with "simulation" target
 
-## Main Tasks
-Monitors 1-Wire lines for incoming interrupts (alarms) to be used instead of polling.
-Controls a DS2482 (one wire master) via I2C master or optional the software OneWire bus
-I2C slave interface for PI plus one  GPIO line for alarm indication
-Watchdog feature for PI polling to switch over to fallback Arduino soltuion
-Simple light switching matrix based on memory optimized addresses
+## Features Details
 
 ### Alarm handling
-Each custom DS2482 generates an alarm signal of > 800 us on the OneWire line. No
+
+Each custom DS2408 generates an alarm signal of > 800 us on the OneWire line. No
 other master supports detection of it. But this is a feature of the iButton.
 Therefore I need a master to at least monitor the line and signal it to an
 other master. The Arduino turned out to be fast and stable to handle basic
@@ -62,18 +49,20 @@ Slaves are based on the OneWireSlave Attiny code uses a format like this:
 29 | id | bus | ~id | ~bus | 66 | 77 | CRC
 with id: 0 .. F
 PIO0/1 are output (usually, but can be configured)
-Latch2..7 are input (usually only 4 are used)
+Latch2..7 are input (usually)
 A special destination type for other devices (like DS2413) is reserved.
 The custom DS2408 implementation also serves a alarm signal of 900 us like
 the iButtons do. This avoids frequent polling (would need to be around 200 ms)
 
 ### Switching examples ###
+
 A button is pressed. The slave generates an alarm signal on the bus and the Arduino
 detects the long signal (> 800 us). It starts polling using the alarm condition
 for the (or all) slaves in alarm condition. Reads out the registers and
 starts a lookup in the timer table and switch table for commands.
 
 ### Measures to overcome limitations
+
 Still the lookup table could be too large and this needs to be mitigated.
 - fixed or stable switches in program space: easy to access via different table
   or use custom bootloader for flash storing option
@@ -92,7 +81,6 @@ F0 - reset
 03 - write PIO: type, bus, adr1, pio and release lock, check for an event acknowledging the change
 E2 - lock i2c bus and get status, if no events in the queue the lock is released again
 78 - Handle ack: pass the sequence number to be acked, this releases the lock
-
 
 status: alarm bus 3 | alarm bus 2 | alarm bus 1 | alarm bus0
 bus select
@@ -137,7 +125,7 @@ If event data (0x40)
     This also may release the I2C host bus
     iic.i2cWriteSync(iicAdr, 2, Buffer.from([0x78, rbuf[7]]));
 
-## sending commands details
+### sending commands details
     set read ptr to DS2482_STATUS_REGISTER
     iic.i2cWriteSync(iicAdr, 2, Buffer.from([0xE1, 0xE1]));
     delay(1);
@@ -167,3 +155,57 @@ sw t <timer type> <bus> <adr> <latch> <dst bus> <dst adr> <dst pio> [type]
     latch 10 .. 17: long press
     latch 0 .. 7: normal press
     latch 20 .. 27: pressing
+
+## EEPROM config space
+
+3 6 0 1 0 0 3 0 80 1D 9 2
+            vers=3 tbl@8 len=3
+	                timed  @15 timed vers=2 len=0 / Max 40
+			       16bit @ 17 vers=0 len=0 / Max 0
+
+
+start:
+pin 0 2 0 20 1 240
+pin 2 7 0 60 1 250
+pin 0 4 5 40 2 90
+stop
+pin 0 2 0 eb 0 0
+pin 0 2 0 ee 0 0
+on
+pin 0 2 0 DD 0 254
+pin 2 7 0 DD 0 254
+off
+pin 0 2 0 EB 0 0
+pin 2 7 0 EB 0 0
+
+brightness
+pin 2 7 0 e3 250 0
+pin 0 2 0 e3 250 250
+
+threshold
+pin 2 7 0 e5 236 0
+pin 0 2 0 e5 228 0
+
+cfg 7 w ff ff ff ff 20 ff ff ff ff ff ff 23 02 00 00 ff ff ff ff FC
+             DD
+          E4 20 0 A 6 4
+cfg 7 w 1 e4 28 0 0 3 3 0 21 0 0 0 0 0 0
+= level = 200
+= time = 2 min
+cfg 2 w 1 C0 30 0 A 3 3 0 21 0 0 0 0 0 0
+
+        R |R |R |SW 1  2  3  4  5  6  7 |CFG 1 2  3  4  5  6  7 |FEA|OFF|MAJ|MIN|TYP
+cfg 2 w F8 FF FF FF FF FF FF FF 20 FF FF 23 21 21 21 21 02 10 10
+        T|TH|DD|DU|DF|T1|T2|SW 1  2  3  4  5  6  7
+cfg 2 w 1 C0 20 00 0A 03 01 ff ff ff FF FF 21 FF FF FF FF FF FF
+cfg 2 w 1
+cfg 2
+
+
+cfg 7 w 1
+        T|TH|DD|DU|DF|T1|T2|SW 1  2  3  4  5  6  7
+cfg 7 w 1 40 10 00 0A 01 01 FF 21 FF FF FF FF FF FF FF FF FF FF FF FF
+p 2 7 0 30
+
+cfg 7 w ff ff ff ff 20 ff ff ff ff ff ff 23 02 21 02 ff ff ff ff FC
+cfg 1 w ff ff ff ff ff ff ff ff ff ff ff 02 02 02 02 ff ff ff ff FC

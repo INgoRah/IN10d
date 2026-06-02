@@ -29,6 +29,15 @@
 
 #include "DS2482.h"
 #include "Wire.h"
+#include <CircularBuffer.hpp>
+
+#ifdef EXT_DEBUG
+typedef struct {
+	char  type;
+	uint8_t  val;
+} log_data;
+CircularBuffer<log_data, 150> logger;
+#endif /* EXT_DEBUG */
 
 #define PTR_STATUS 0xf0
 #define PTR_READ 0xe1
@@ -46,13 +55,16 @@ void DS2482::begin()
 {
 	status = stOk;
 	last_err = 0;
+#if !defined(AVRSIM)
 	// timeout 10 ms
 	Wire.setWireTimeout(10000, true);
 	Wire.beginTransmission(mAddress);
+#endif
 }
 
 void DS2482::end()
 {
+#if !defined(AVRSIM)
 	uint8_t ret;
 
 	ret = Wire.endTransmission();
@@ -66,6 +78,7 @@ void DS2482::end()
 		 */
 		last_err = ret;
 	}
+#endif
 }
 
 
@@ -76,14 +89,21 @@ void DS2482::end()
 */
 void DS2482::setReadPtr(uint8_t readPtr)
 {
+#if !defined(AVRSIM)
 	begin();
 	Wire.write(0xe1);  // changed from 'send' to 'write' according http://blog.makezine.com/2011/12/01/arduino-1-0-is-out-heres-what-you-need-to-know/'
 	Wire.write(readPtr);
 	end();
+#endif
 }
 
 uint8_t DS2482::_read()
 {
+	uint8_t d;
+#if defined(AVRSIM)
+	// simulate read
+	d = 0xaa;
+#else
 	uint8_t ret;
 
 	/* this can result in a timeout (ret == 0) */
@@ -93,8 +113,9 @@ uint8_t DS2482::_read()
 		status = stTimeout;
 		return 0xff;
 	}
-
-	return Wire.read();
+	d = Wire.read();
+#endif
+	return d;
 }
 
 /* initializes the error code and set it to:
@@ -108,6 +129,9 @@ uint8_t DS2482::_read()
   */
 uint8_t DS2482::busyWait(bool setPtr)
 {
+#if defined(AVRSIM)
+	return 0;
+#else
 	uint8_t res;
 	int loopCount = 500;
 
@@ -140,20 +164,26 @@ uint8_t DS2482::busyWait(bool setPtr)
 		delayMicroseconds(20);
 	}
 	return res;
+#endif
 }
 
 //----------interface
 void DS2482::resetDev()
 {
+#if !defined(AVRSIM)
 	ch = 0xff;
 	begin();
 	Wire.write(0xf0);
 	end();
+#endif
 }
 
 bool DS2482::configureDev(uint8_t config)
 {
 	ch = 0xff;
+#if defined(AVRSIM)
+	return true;
+#else
 	busyWait(true);
 	begin();
 	Wire.write(0xd2);
@@ -161,6 +191,7 @@ bool DS2482::configureDev(uint8_t config)
 	end();
 
 	return _read() == config;
+#endif
 }
 
 /* channel must be between 0 and 7
@@ -177,9 +208,9 @@ bool DS2482::selectChannel(uint8_t channel)
 {
 	static const byte chan_r[8] = { 0xB8, 0xB1, 0xAA, 0xA3, 0x9C, 0x95, 0x8E, 0x87 };
 	static const byte chan_w[8] = { 0xF0, 0xE1, 0xD2, 0xC3, 0xB4, 0xA5, 0x96, 0x87 };
-
 	if (ch == channel)
 		return true;
+#if !defined(AVRSIM)
 	if (busyWait(true) == DS2482_STATUS_INVAL) {
 		/* err can be 11..18 */
 		last_err += ERR_CHSEL1;
@@ -202,6 +233,7 @@ bool DS2482::selectChannel(uint8_t channel)
 		last_err = ERR_CHCHK;
 		return false;
 	}
+#endif
 
 	ch = channel;
 	return true;
@@ -228,6 +260,9 @@ bool DS2482::selectChannel(uint8_t channel)
  */
 bool DS2482::reset()
 {
+#if defined(AVRSIM)
+	return true;
+#else
 	if (busyWait(true) == DS2482_STATUS_INVAL) {
 		/* err can be 11..18 */
 		last_err += ERR_RESET1;
@@ -247,7 +282,11 @@ bool DS2482::reset()
 		last_err += ERR_RESET3;
 		return false;
 	}
+#ifdef EXT_DEBUG
+	logger.push(log_data{'X', ch});
+#endif /* EXT_DEBUG */
 	return stat & DS2482_STATUS_PPD ? true : false;
+#endif
 }
 
 /* 75 .. address send, NACK received (on busy wait)
@@ -264,6 +303,10 @@ bool DS2482::reset()
 uint8_t DS2482::write(uint8_t b, uint8_t power)
 {
 	(void)power;
+#ifdef EXT_DEBUG
+	logger.push(log_data{'W', b});
+#endif /* EXT_DEBUG */
+#if !defined(AVRSIM)
 	if (busyWait(true) == DS2482_STATUS_INVAL) {
 		/* err can be 11..18 */
 		last_err += ERR_WRITE1;
@@ -278,7 +321,7 @@ uint8_t DS2482::write(uint8_t b, uint8_t power)
 		last_err += ERR_WRITE2;
 		return 0xff;
 	}
-
+#endif
 	return b;
 }
 
@@ -301,6 +344,8 @@ uint8_t DS2482::write(uint8_t b, uint8_t power)
 */
 uint8_t DS2482::read()
 {
+	uint8_t d;
+#if !defined(AVRSIM)
 	if (busyWait(true) == DS2482_STATUS_INVAL) {
 		/* err can be 11..18 */
 		last_err += ERR_READ1;
@@ -318,8 +363,13 @@ uint8_t DS2482::read()
 		return 0xff;
 	}
 	setReadPtr(PTR_READ);
+#endif
+	d = _read();
+#ifdef EXT_DEBUG
+	logger.push(log_data{'R', d});
+#endif /* EXT_DEBUG */
 
-	return _read();
+	return d;
 }
 
 void DS2482::skip()
@@ -371,13 +421,20 @@ bool DS2482::search(uint8_t *newAddr, bool search_mode)
 		return false;
 	}
 
-	if (search_mode == true)
+	if (search_mode == true) {
 		// NORMAL SEARCH
+#ifdef EXT_DEBUG
+		logger.push(log_data{'S', ch});
+#endif /* EXT_DEBUG */
 		write(OW_SEARCH_ROM);
-	else
+	}
+	else {
 		// CONDITIONAL SEARCH
+#ifdef EXT_DEBUG
+		logger.push(log_data{'A', ch});
+#endif /* EXT_DEBUG */
 		write(OW_COND_SEARC_ROM);
-
+	}
 	if (last_err != ERR_NONE) {
 		last_err += ERR_SRCH2;
 		return false;
@@ -437,3 +494,21 @@ bool DS2482::search(uint8_t *newAddr, bool search_mode)
 	return true;
 }
 #endif
+
+void DS2482::dump()
+{
+#ifdef EXT_DEBUG
+	Serial.println(F("Dump DS2482 log:"));
+	for (byte i = 0; i < logger.size(); i++) {
+		// retrieves the i-th element from the buffer without removing it
+        log_data l = logger[i];
+		if (l.type == 'X')
+			Serial.println();
+		Serial.print(l.type);
+		Serial.print(F(":"));
+		Serial.print(l.val, HEX);
+		Serial.print(F(" "));
+	}
+	Serial.println();
+#endif /* EXT_DEBUG */
+}

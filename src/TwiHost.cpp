@@ -13,9 +13,8 @@
 #include "SwitchHandler.h"
 
 #define CMD_RESET               0xF0	/* No param */
-#define CMD_CHANNEL_SELECT      0xC3	/* Param: Channel byte - DS2482-800 only */
 #define CMD_MODE                0x69 /* Param: mode byte */
-#define CMD_SW_CFG             0x6A /* Param: light threshold byte | default dim light on level */
+#define CMD_SW_CFG              0x6A /* Param: light threshold byte | default dim light on level */
 #define CMD_SET_READ_PTR        0xE1	/* Param: DS2482_PTR_CODE_xxx */
 #define CMD_SET_READ_PTR_LOCK	0xE2
 #define CMD_UNLOCK 0xEF
@@ -95,29 +94,30 @@ void TwiHost::setStatus(uint8_t stat)
 	status = stat;
 };
 
-void TwiHost::setAlarm(uint8_t alarm)
+void TwiHost::setAlarm(uint8_t channel)
 {
-	if (alarm) {
+	if (channel) {
 		if (alarmSignal == 0) {
-			alarmSignal = 1;
+			alarmSignal = channel + 1;
 			digitalWrite(13, HIGH);
+		} else {
+			alarmSignal = 0xF;
 		}
+		digitalWrite(HOST_ALRM_PIN, LOW);
 	}
 	else {
 		if (alarmSignal) {
 			alarmSignal = 0;
 			digitalWrite(13, LOW);
 		}
+		digitalWrite(HOST_ALRM_PIN, HIGH);
 	}
 }
-
 
 uint8_t TwiHost::getStatus()
 {
 	uint8_t stat = status;
 
-	if (host_lock)
-		stat = STAT_LOCK;
 	if (events.size() > 0)
 		stat |= STAT_EVT;
 	return stat;
@@ -169,34 +169,6 @@ void TwiHost::command()
 		} else
 			setStatus(STAT_NO_DATA);
 		break;
-#if 0
-	case 0x02:
-	{
-		/* programming switch table */
-		int i;
-		union s_adr src;
-		union d_adr_8 dst;
-
-		host.setStatus(STAT_BUSY);
-		I2C_READ(dst.da.type);
-		I2C_READ(src.sa.bus);
-		I2C_READ(src.sa.adr);
-		I2C_READ(src.sa.latch);
-		I2C_READ(src.sa.press);
-		I2C_READ(dst.da.bus);
-		I2C_READ(dst.da.adr);
-		I2C_READ(dst.da.pio);
-		for (i = 0; i < MAX_SWITCHES; i++) {
-			if (sw_tbl[i].src.data == 0 || sw_tbl[i].src.data == src.data) {
-				sw_tbl[i].src.data = src.data;
-				sw_tbl[i].dst.data = dst.data;
-				break;
-			}
-		}
-		host.setStatus(STAT_OK);
-		break;
-	}
-#endif
 	case CMD_SWITCH:
 		// switching
 		{
@@ -205,16 +177,9 @@ void TwiHost::command()
 
 			host_lock = 0;
 
-			setStatus(STAT_PROCESSING);
+			setStatus(STAT_BUSY);
 			dst.data = 0;
 			if (rxBytes < 4 && debug > 0) {
-#ifdef EXT_DEBUG
-				Serial.print("rx cnt=");
-				Serial.println(rxBytes);
-				Serial.print("avail=");
-				Serial.println(Wire.available());
-				Serial.println(F("invalid"));
-#endif
 				host.setStatus(STAT_FAIL);
 				return;
 			}
@@ -227,7 +192,7 @@ void TwiHost::command()
 				host.setStatus(STAT_FAIL);
 				return;
 			}
-			if (dst.da.bus == 0 && dst.da.adr == 9)
+			if (dst.da.bus == 0 && dst.da.adr == 0)
 				dst.da.type = 2;
 			else
 				dst.da.type = 0;
@@ -243,7 +208,7 @@ void TwiHost::command()
 			if (swHdl.switchLevel(dst, level))
 				setStatus(STAT_OK);
 			else {
-				setStatus(STAT_NOPE);
+				setStatus(STAT_FAIL);
 #ifdef DEBUG
 				log_time();
 				printDst(dst);
@@ -252,65 +217,6 @@ void TwiHost::command()
 			}
 			break;
 		}
-#if 0
-		case 0x04:
-		{
-			int i;
-			/* status read ... */
-
-			I2C_READ(bus);
-			I2C_READ(adr[1]);
-			Serial.print(bus);
-			Serial.print(F("."));
-			Serial.print(adr[1]);
-			ow.adrGen (bus, adr, adr[1]);
-			/* here we change from slave to master
-			* Would be nice to have a signal (GPIO) to signal
-			* usage of the I2C */
-			ow.ds2408RegRead(bus, adr, hostData, false);
-			for (i = 0; i < 9; i++) {
-				Serial.print(hostData[i], HEX);
-				Serial.print(F(" "));
-			}
-			Serial.println(hostData[i], HEX);
-			hostData[0] = d[0]; // PIO Logic State
-			hostData[1] = d[1]; // Output latch
-			hostData[2] = d[2]; // Activity latch state
-			hostData[3] = d[5]; // Status
-			hostData[4] = d[6]; // Status ext 1
-			hostData[5] = d[7]; // Status ext 2
-			host.setData((uint8_t*)hostData, 6);
-			host.setStatus(STAT_OK);
-			break;
-		}
-		/* external search not supported. Will be done by owfs with a bus lock */
-		case 0x5A:
-			uint8_t cnt, adr[8], bus;
-#define MAX_DATA (15 * 7)
-
-			hostBuf = (uint8_t*)malloc(MAX_DATA);
-			host.setStatus(STAT_BUSY);
-			id = 0;
-			ds->reset_search();
-			if (ds->reset()) {
-				cnt = 0;
-				while (ds->search(adr)) {
-					memcpy (&hostBuf[cnt], adr, 7);
-					cnt += 7;
-					// wrap around in case of overflow
-					if (cnt > MAX_DATA)
-						cnt = 0;
-				}
-				host.setData(hostBuf, cnt);
-				host.setStatus(STAT_OK);
-			}
-			else
-				host.setStatus(STAT_NO_DATA);
-			break;
-		case 0x5B:
-			free(hostBuf);
-			break;
-#endif
 		default:
 			if (user_onCommand) {
 				user_onCommand(cmd, 0);
@@ -337,19 +243,14 @@ void TwiHost::loop()
 	}
 	if (rxBytes > 0) {
 		/* should never happen */
-#ifdef DEBUG
-		if (debug > 0) {
-			Serial.print (F("Data not handled: "));
-			Serial.print (Wire.available());
-		}
-#endif
 		if (Wire.available()) {
 			(void)Wire.read();
-			}
+		}
 		rxBytes = 0;
 	}
-	if (host.events.size() > 0 || _ack != _seq) {
-		digitalWrite(HOST_ALRM_PIN, LOW);
+	if ((swHdl.mode & MODE_HOST) == 0) {
+		if (host.events.size() > 0 || _ack != _seq)
+			digitalWrite(HOST_ALRM_PIN, LOW);
 	}
 }
 
@@ -360,6 +261,7 @@ extern uint8_t hour;
 void TwiHost::addEvent(uint8_t type, uint16_t source, uint16_t data)
 {
 	struct logData d;
+
 
 	// put into fifo
 	d.type = type;
@@ -381,7 +283,9 @@ void TwiHost::addEvent(uint8_t type, uint16_t source, uint16_t data)
 void TwiHost::addEvent(uint8_t type, uint8_t bus, uint8_t adr, uint16_t data)
 {
 	union s_adr src;
-
+	if (swHdl.mode & MODE_HOST && type == POWER_IMP) {
+		alarmSignal |= STAT_POWER_IMP;
+ 	}
 	src.data = 0;
 	src.sa.bus = bus;
 	src.sa.adr = adr;
@@ -413,7 +317,7 @@ void TwiHost::addEvent(union d_adr_8 dst, uint16_t data, uint8_t type)
 
 void TwiHost::handleAck(uint8_t ack)
 {
-#ifdef DEBUG
+#ifdef EXT_DEBUG
 	unsigned long tm = millis() - host_lock;
 	if (debug > 4 && host_lock) {
 		Serial.print (F("I2C locked time = "));
@@ -423,8 +327,8 @@ void TwiHost::handleAck(uint8_t ack)
 	if (ack == _seq) {
 		// serviced
 		_ack = ack;
-#ifdef DEBUG
-		if (debug > 3) {
+#ifdef EXT_DEBUG
+		if (debug > 4) {
 			log_time();
 			Serial.print (F("ACKed "));
 			Serial.println(ack, HEX);
@@ -432,8 +336,8 @@ void TwiHost::handleAck(uint8_t ack)
 #endif
 		setStatus(STAT_OK);
 	} else {
-		setStatus(STAT_WRONG);
-#ifdef DEBUG
+		setStatus(STAT_FAIL);
+#ifdef EXT_DEBUG
 		if (debug > 0) {
 			log_time();
 			Serial.print (F("ACK mismatch "));
@@ -456,31 +360,12 @@ void TwiHost::receiveEvent(int howMany) {
 	d = Wire.read();
 	if (cmd != 0xff && cmd != d &&
 		(d == CMD_SWITCH || d == CMD_EVT_DATA)) {
-		/* TODO: Handle queue
-		5:27:37 1.1.2 level=100
- 		cmd 3 not yet handled, Stat  2 new 3
-		last ACK 4A != 4A
-		*/
-#ifdef DEBUG
-		if (debug > 0) {
-			Serial.print (F(" cmd "));
-			Serial.print (cmd);
-			Serial.print (F(" not yet handled, Stat  "));
-			Serial.print (host.getStatus(), HEX);
-			Serial.print (F(" new "));
-			Serial.println (d, HEX);
-			Serial.print (F("last ACK "));
-			Serial.print (host._ack, HEX);
-			Serial.print (F(" != "));
-			Serial.println (host._seq, HEX);
-		}
-#endif
 	}
 	/* assert if not at least 1? */
 	switch (d)
 	{
 	case CMD_REBOOT:
-#ifdef DEBUG
+#ifdef EXT_DEBUG
 		Serial.print (F("Forced Reset..."));
 #endif
 		while (1);
@@ -488,13 +373,6 @@ void TwiHost::receiveEvent(int howMany) {
 		host.setStatus(STAT_OK);
 		cmd = 0xff;
 		break;
-#if 0
-	case CMD_CHANNEL_SELECT:
-		reg = DS2482_CHANNEL_SELECTION_REGISTER;
-		d = Wire.read() & 0x0f;
-		user_onCommand(d, d);
-		break;
-#endif
 	case CMD_UNLOCK:
 		host_lock = 0;
 		break;
@@ -520,6 +398,10 @@ void TwiHost::receiveEvent(int howMany) {
 		break;
 	case CMD_MODE:
 		swHdl.mode = Wire.read();
+		if (swHdl.mode & MODE_HOST)
+			// host mode must deactivate auto switch and alarm handling
+			// to avoid conflicts on the I2C bus.
+			swHdl.mode = MODE_HOST;
 		break;
 	case CMD_SW_CFG:
 		swHdl.light_thr = Wire.read();
@@ -543,7 +425,7 @@ void TwiHost::receiveEvent(int howMany) {
 		if (howMany > 2)
 			min = Wire.read();
 		if (howMany > 3)
-			sun = Wire.read();
+			(void)Wire.read();
 
 		host.setStatus(STAT_OK);
 		break;
@@ -556,40 +438,6 @@ void TwiHost::receiveEvent(int howMany) {
 		break;
 	default:
 		break;
-#if 0
-	case 2:
-		/* switch table */
-		I2C_READ(dst.da.type);
-		I2C_READ(src.sa.bus);
-		I2C_READ(src.sa.adr);
-		I2C_READ(src.sa.latch);
-		I2C_READ(src.sa.press);
-		I2C_READ(dst.da.bus);
-		I2C_READ(dst.da.adr);
-		I2C_READ(dst.da.pio);
-		/*fall-through */
-	case 4:
-		/* status read ... */
-		// more bytes received, read in loop
-		host.setStatus(STAT_BUSY);
-		/*fall-through */
-	default:
-		Serial.println(F("unkown CMD"));
-		cmd = d;
-		Serial.print (cmd);
-		Serial.print (F(" cmd "));
-		Serial.print (host.rxBytes);
-		Serial.print (F(" pending "));
-		Serial.print("avail=");
-		Serial.print(Wire.available());
-		if (host.rxBytes > 0) {
-			Serial.print (" [");
-			Serial.print (Wire.peek());
-			Serial.print (" ]");
-		}
-		Serial.println();
-		// handle in loop to not block status reads
-#endif
 	}
 }
 
@@ -615,7 +463,7 @@ void TwiHost::requestEvent()
 			val = host.getStatus();
 			Wire.write(val);
 			rdPos = rdLen;
-			host.status = STAT_READY;
+			host.setStatus(STAT_OK);
 		}
 		else {
 			host.setStatus(STAT_NO_DATA);
@@ -626,7 +474,7 @@ void TwiHost::requestEvent()
 	case DS2482_ALARM_STATUS_REGISTER:
 		{
 			uint8_t stat = host.alarmSignal;
-			digitalWrite(HOST_ALRM_PIN, HIGH);
+			digitalWrite(HOST_ALRM_PIN, LOW);
 			if (host.events.size() > 0) {
 				stat |= STAT_EVT;
 			}

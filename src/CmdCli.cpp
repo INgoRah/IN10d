@@ -31,6 +31,7 @@ extern void hostCommand(uint8_t cmd, uint8_t data);
 extern uint8_t sec;
 extern uint8_t min;
 extern uint8_t hour;
+extern byte pins;
 
 CmdCli* me;
 
@@ -45,6 +46,7 @@ static boolean stringComplete = false;  // whether the string is complete
 static String inputString = "";         // a String to hold incoming data
 static OwDevices* ow;
 static byte curBus, curAdr, curPio;
+static byte adr[8];
 
 /*
  * Global functions
@@ -140,15 +142,18 @@ void CmdCli::begin(OwDevices* devs)
 	cmdCallback.addCmd("cfg", &funcCfg);	// 6
 	cmdCallback.addCmd("sw", &funcSwCmd);	// 7
 	cmdCallback.addCmd("t", &funcTemp);		// 8
-	cmdCallback.addCmd("log", &funcLog);	// 9
+	cmdCallback.addCmd("pin", &funcPin);		// 9
+	cmdCallback.addCmd("adc", &funcAdc);		// 10
+	//cmdCallback.addCmd("log", &funcLog);	// 10
 	//cmdCallback.addCmd("time", &funcTime);
-	//cmdCallback.addCmd("c", &funcCmd);		// 10
+	//cmdCallback.addCmd("c", &funcCmd);		// 11
+	cmdCallback.addCmd("tst", &funcTst);	// 7
 #ifdef EXT_DEBUG
-	cmdCallback.addCmd("pset", &funcPinSet); // 10
-	cmdCallback.addCmd("pget", &funcPinGet); // 11
+	cmdCallback.addCmd("pset", &funcPinSet); // 12
+	cmdCallback.addCmd("pget", &funcPinGet); // 13
 #endif
 #ifdef CHGID_CMD
-	cmdCallback.addCmd("id", &funcChgId);		// 9 or 12
+	cmdCallback.addCmd("id", &funcChgId);		// 10 or 14
 #endif
 	// reserve bytes for the inputString
 	inputString.reserve(MAX_CMD_BUFSIZE);
@@ -192,7 +197,6 @@ void CmdCli::funcBus(CmdParser *myParser)
 void CmdCli::funcSearch(CmdParser *myParser)
 {
 	int res, k;
-	byte adr[8];
 	bool alarm = true;
 
 	if (myParser->getParamCount() > 0)
@@ -203,7 +207,6 @@ void CmdCli::funcSearch(CmdParser *myParser)
 		Serial.println(F(" =="));
 		wdt_reset();
 		ds->selectChannel(k);
-		ds->reset();
 		ds->reset_search();
 		res = 0;
 		while (ds->search(adr, alarm)) {
@@ -223,6 +226,10 @@ void CmdCli::funcSearch(CmdParser *myParser)
 		} else {
 			Serial.println(F("no devs!"));
 		}
+		ds->reset_search();
+		while (ds->search(adr, true)) {
+			; // avoid stuck dev
+		}
 	}
 }
 
@@ -230,10 +237,9 @@ void CmdCli::funcStatus(CmdParser *myParser)
 {
 	bool res;
 	byte data[10], i;
-	byte adr[8];
 
+	adr[0] = 0x29;
 	if (myParser->getParamCount() > 1) {
-
 		curBus = atoi(myParser->getCmdParam(1));
 		curAdr = atoi(myParser->getCmdParam(2));
 		if (myParser->getParamCount() > 2)
@@ -242,7 +248,7 @@ void CmdCli::funcStatus(CmdParser *myParser)
 			res = false;
 	}
 	ow->adrGen(curBus, adr, curAdr);
-#ifdef EXT_DEBUG
+#ifdef DEBUG
 	if (debug) {
 		for (i = 0; i < 7; i++) {
 			Serial.print(adr[i], HEX);
@@ -264,7 +270,9 @@ void CmdCli::funcPio(CmdParser *myParser)
 {
 	uint8_t level;
 	union pio dst;
+	bool ret;
 
+	adr[0] = 0x29;
 	if (myParser->getParamCount() == 0) {
 		ow->cacheInit();
 		return;
@@ -277,7 +285,7 @@ void CmdCli::funcPio(CmdParser *myParser)
 	if (myParser->getParamCount() == 4) {
 		curBus = atoi(myParser->getCmdParam(1));
 		curAdr = atoi(myParser->getCmdParam(2));
-		curPio = atoi(myParser->getCmdParam(3));
+		curPio = atoi(myParser->getCmdParam(3)) & 0x07;
 		level = atoi(myParser->getCmdParam(4));
 	} else
 		level = atoi(myParser->getCmdParam(1));
@@ -287,12 +295,48 @@ void CmdCli::funcPio(CmdParser *myParser)
 	// convenience: 1 instead of typing 100
 	if (level == 1)
 		level = 100;
-	swHdl.switchLevel(dst, level);
+	ret = swHdl.switchLevel(dst, level);
+	if (!ret) {
+		Serial.println(F("cmd failed!"));
+	}
+}
+
+void CmdCli::funcPin(CmdParser *myParser)
+{
+	uint8_t level, pio_tmr = 0, type;
+
+	if (myParser->getParamCount() == 6) {
+		curBus = atoi(myParser->getCmdParam(1));
+		curAdr = atoi(myParser->getCmdParam(2));
+		curPio = atoi(myParser->getCmdParam(3));
+		type = me->atoh(myParser->getCmdParam(4), false);
+		pio_tmr = atoi(myParser->getCmdParam(5));
+		level = atoi(myParser->getCmdParam(6));
+	} else {
+		Serial.println(F("bus adr pio type time level"));
+		return;
+	}
+	uint16_t crc;
+	adr[0] = 0x29;
+
+	byte data[5] = { 0xC5, type, curPio, pio_tmr, level };
+	ds->selectChannel(curBus);
+	ds->reset();
+	ow->adrGen(curBus, adr, curAdr);
+	ds->select(adr);
+
+	// Master sendet Befehl
+	for (int i = 0; i < 5; i++) {
+		ds->write(data[i]);
+		Serial.print(F(" "));
+		Serial.print(data[i], HEX);
+	}
+	crc = ds->read();
+	crc |= ds->read() << 8;
 }
 
 void CmdCli::funcTemp(CmdParser *myParser)
 {
-	byte adr[8];
 	uint16_t temp;
 	uint8_t hum;
 
@@ -313,8 +357,7 @@ void CmdCli::funcTemp(CmdParser *myParser)
 	}
 #endif
 	adr[0] = 0x28;
-	adr[1] = curAdr;
-	ow->adrGen(curBus, adr, adr[1]);
+	ow->adrGen(curBus, adr, curAdr);
 #ifdef EXT_DEBUG
 	if (debug) {
 		int i;
@@ -339,33 +382,81 @@ void CmdCli::funcTemp(CmdParser *myParser)
 	Serial.println();
 }
 
+void CmdCli::funcAdc(CmdParser *myParser)
+{
+	byte ch = 1;
+	uint16_t adc;
+
+	if (myParser->getParamCount() > 1) {
+		curBus = atoi(myParser->getCmdParam(1));
+		curAdr = atoi(myParser->getCmdParam(2));
+	}
+	if (myParser->getParamCount() > 2)
+		ch = atoi(myParser->getCmdParam(3));
+	adr[0] = 0x20;
+	adr[1] = curAdr;
+	ow->adrGen(curBus, adr, adr[1]);
+#ifdef EXT_DEBUG
+	if (debug > 4) {
+		int i;
+		for (i = 0; i < 7; i++) {
+			Serial.print(adr[i], HEX);
+			Serial.write(' ');
+		}
+		Serial.println(adr[i], HEX);
+	}
+#endif
+	adc = ow->adcRead (curBus, adr, ch);
+	delay(400);
+	adc = ow->adcRead (curBus, adr, ch, 1);
+	Serial.print(F("ADC="));
+	Serial.print(adc);
+	Serial.println();
+}
+
+
 void CmdCli::funcMode(CmdParser *myParser)
 {
-	if (myParser->getParamCount() > 0)
+	char* action;
+
+	if (myParser->getParamCount() == 0)
+		goto print_mode;
+	if (myParser->getParamCount() == 1) {
+		action = myParser->getCmdParam(1);
+		if (*action == 's') {
+			//  0      1     2       3          4          5      6 
+			// vers | pos | mode | debug | ligthsensor | pins |  len    | tbl ... | ...
+			eeprom_update_byte((uint8_t*)1, (uint8_t)6);
+			eeprom_update_byte((uint8_t*)2, (uint8_t)swHdl.mode);
+			eeprom_update_byte((uint8_t*)3, (uint8_t)debug);
+			eeprom_update_byte((uint8_t*)4, (uint8_t)light_sensor);
+			eeprom_update_byte((uint8_t*)5, (uint8_t)pins);
+		} else if (*action == 'r') {
+			swHdl.mode = eeprom_read_byte((const uint8_t*)2);
+			debug = eeprom_read_byte((const uint8_t*)3);
+			light_sensor = eeprom_read_byte((const uint8_t*)4);
+			pins = eeprom_read_byte((const uint8_t*)5);
+		}
+		goto print_mode;
+	} else
 		swHdl.mode = atoi(myParser->getCmdParam(1));
-	Serial.print(F(" mode="));
-	Serial.print(swHdl.mode);
 	if (myParser->getParamCount() > 1)
 		debug = atoi(myParser->getCmdParam(2));
 	if (myParser->getParamCount() > 2)
 		swHdl.light_thr = atoi(myParser->getCmdParam(3));
+	if (myParser->getParamCount() > 3)
+		light_sensor = atoi(myParser->getCmdParam(4));
+	if (myParser->getParamCount() > 4)
+		pins = me->atoh(myParser->getCmdParam(5), false);
 
-	Serial.print(F(" debug="));
-	Serial.print(debug);
-	Serial.print(F(" light="));
-	Serial.print(light);
-	Serial.print(F(" light sensor="));
-	Serial.print(light_sensor);
-	Serial.print(F(" light thr ="));
-	Serial.print(swHdl.light_thr);
-	Serial.print(F(" sun="));
-	Serial.print(sun);
+print_mode:
+	dumpCfg();
 }
 
 void CmdCli::funcCfg(CmdParser *myParser)
 {
 	uint8_t i, len;
-	byte adr[8], data[MAX_CFG_SIZE];
+	byte data[MAX_CFG_SIZE];
 	char *c;
 
 	c = myParser->getCmdParam(1);
@@ -380,7 +471,9 @@ void CmdCli::funcCfg(CmdParser *myParser)
 	if (adr[1] > 20) {
 		adr[1] = adr[1] - 20;
 		adr[0] = 0x28;
-	}
+	} else
+		adr[0] = 0x29;
+
 	ow->adrGen(curBus, adr, adr[1]);
 	if (myParser->getParamCount() == 1) {
 		if (adr[0] == 0x28)
@@ -408,7 +501,7 @@ void CmdCli::funcCfg(CmdParser *myParser)
 		i--;
 		Serial.print(F("Cfg write ("));
 		Serial.print(i);
-		Serial.print(") ");
+		Serial.print(F(") "));
 		ow->ds2408CfgWrite(curBus, adr, data, i);
 	}
 	if (*c == 's') {
@@ -449,7 +542,6 @@ c 7 8 07 ff 00 00 STURM
 void CmdCli::funcCmd(CmdParser *myParser)
 {
 	byte d;
-	byte adr[8];
 	char *txt;
 	byte data[10];
 	int i;
@@ -560,6 +652,27 @@ void CmdCli::dumpSwTbl(void)
 	Serial.print(size);
 	Serial.print(F("/"));
 	Serial.println((int)sizeof(timed_tbl));
+
+	Serial.println(F("= Switches 16 bit ="));
+	for (i = 0; i < 2; i++) {
+		union pio p;
+		src.data = sw_tbl16[i].src.data;
+		p.data = sw_tbl16[i].dst.data;
+		if (src.data == 0)
+			continue;
+		if (src.data == 0xffff && dst.data == 0xff)
+			continue;
+		size += sizeof(struct _sw_tbl);
+		src.sa.res = 0;
+		printSrc(src);
+		Serial.print(F(" -> "));
+		printDst(p);
+		Serial.print(F(" ("));
+		Serial.print(src.data, HEX);
+		Serial.print(F(" | "));
+		Serial.print(p.data, HEX);
+		Serial.println(F(")"));
+	}
 }
 
 /*
@@ -577,10 +690,11 @@ latch 20 .. 27: pressing
 */
 void CmdCli::funcSwCmd(CmdParser *myParser)
 {
-	int i;
+	uint8_t i;
 	uint16_t off;
 	union s_adr src;
 	union d_adr_8 dst;
+	union pio dst16;
 	char *c;
 	uint8_t ttype;
 
@@ -588,7 +702,7 @@ void CmdCli::funcSwCmd(CmdParser *myParser)
 		me->dumpSwTbl();
 		return;
 	}
-	if (myParser->getParamCount() == 1) {
+	if (myParser->getParamCount() < 3) {
 		c = myParser->getCmdParam(1);
 #ifdef EXT_DEBUG
 		if (*c == '?') {
@@ -603,24 +717,33 @@ void CmdCli::funcSwCmd(CmdParser *myParser)
 			case 'r': 	// read eeprom
 				swHdl.initSwTable();
 				break;
-			case 's':		// write eeprom
-				swHdl.saveSwTable();
+			case 's':	// write eeprom
+				if (myParser->getParamCount() == 2)
+					ttype = atoi(myParser->getCmdParam(2));
+				else
+					ttype = 3;
+				swHdl.saveSwTable(ttype);
 				break;
+#if 0
 			case 'd':		// dump eeprom
 			{
-				uint8_t buf[60];
+				uint8_t buf[220];
 
-				eeprom_read_block((void*)buf, (const void*)0, 20);
-				for (i = 0; i < 19; i++){
+				eeprom_read_block((void*)buf, (const void*)0, sizeof(buf));
+				for (i = 0; i < sizeof(buf); i++){
+					if (i % 16 == 0) {
+						Serial.println();
+						Serial.print(i, HEX);
+						Serial.print(F(": "));
+					}
 					Serial.print(buf[i], HEX);
 					Serial.print(F(" "));
-					if ((i % 20) == 0)
-						Serial.println();
 				}
 				Serial.println(buf[i], HEX);
 
 				break;
 			}
+#endif
 			case 'c':
 				memset (sw_tbl, 0, sizeof(sw_tbl));
 				memset (timed_tbl, 0, sizeof(timed_tbl));
@@ -702,9 +825,19 @@ void CmdCli::funcSwCmd(CmdParser *myParser)
 
 	// byte time;
 	// 1:cmd, 2:bus, 3:adr, 4:latch
-	dst.da.bus = atoi(myParser->getCmdParam(off++));
-	dst.da.adr = atoi(myParser->getCmdParam(off++));
-	dst.da.pio = atoi(myParser->getCmdParam(off++));
+	byte bus, id, pio;
+	bus = atoi(myParser->getCmdParam(off++));
+	id = atoi(myParser->getCmdParam(off++));
+	pio = atoi(myParser->getCmdParam(off++));
+	if (pio > 1 || id > 15 || bus > 3)  {
+		dst16.da.bus = bus;
+		dst16.da.adr = id;
+		dst16.da.pio = pio;
+	} else {
+		dst.da.bus = bus;
+		dst.da.adr = id;
+		dst.da.pio = pio;
+	}
 	/*if (myParser->getParamCount() > 7)
 		time = atoi(myParser->getCmdParam(8));
 	*/
@@ -712,11 +845,22 @@ void CmdCli::funcSwCmd(CmdParser *myParser)
 		dst.da.type = atoi(myParser->getCmdParam(off));
 	switch (*c) {
 		case 's':
-			for (i = 0; i < MAX_SWITCHES; i++) {
-				if (sw_tbl[i].src.data == 0 || sw_tbl[i].src.data == src.data) {
-					sw_tbl[i].src.data = src.data;
-					sw_tbl[i].dst.data = dst.data;
-					break;
+			if (pio < 2) {
+				for (i = 0; i < MAX_SWITCHES; i++) {
+					if (sw_tbl[i].src.data == 0 || sw_tbl[i].src.data == src.data) {
+						sw_tbl[i].src.data = src.data;
+						sw_tbl[i].dst.data = dst.data;
+						break;
+					}
+				}
+			} else {
+				Serial.println(F("16 table"));
+				for (i = 0; i < MAX_SWITCHES; i++) {
+					if (sw_tbl16[i].src.data == 0 || sw_tbl16[i].src.data == src.data) {
+						sw_tbl16[i].src.data = src.data;
+						sw_tbl16[i].dst.data = dst16.data;
+						break;
+					}
 				}
 			}
 			break;
@@ -737,10 +881,12 @@ void CmdCli::funcSwCmd(CmdParser *myParser)
 	me->dumpSwTbl();
 }
 
-extern uint8_t sec;
-extern uint8_t min;
-extern uint8_t hour;
-extern uint8_t sun;
+void CmdCli::funcTst(CmdParser *myParser)
+{
+	Serial.println("Stress Test");
+	ow->ow->reset();
+}
+
 #ifdef EXT_DEBUG
 void CmdCli::funcPinSet(CmdParser *myParser)
 {
@@ -777,6 +923,7 @@ void CmdCli::funcPinGet(CmdParser *myParser)
 }
 #endif
 
+#if 0
 #include "TwiHost.h"
 extern TwiHost host;
 
@@ -814,12 +961,12 @@ void CmdCli::funcLog(CmdParser *myParser)
 	}
 	swHdl.status();
 }
+#endif
 
 #ifdef CHGID_CMD
 void CmdCli::funcChgId(CmdParser *myParser)
 {
 	byte id, bus, i;
-	byte adr[8];
 	byte newAdr[8];
 
 	bus = me->atoh(myParser->getCmdParam(1), false);

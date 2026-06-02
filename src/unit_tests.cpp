@@ -39,6 +39,8 @@ extern unsigned long timer0_millis;
 extern SwitchHandler swHdl;
 extern OneWireBase *ds;
 extern uint8_t pio_data[0x0f];
+extern OwDevices ow;
+
 /*
  * Local variables
  */
@@ -51,6 +53,8 @@ void testSetup() {
 	Serial.begin(115200);
 
 	Serial.print(F("One Wire Control..."));
+	ow.begin(ds);
+
 	swHdl.begin(ds);
 	light = swHdl.light_thr + 1;
 	PCMSK1 |= (_BV(PCINT8) | _BV(PCINT9) | _BV(PCINT10) | _BV(PCINT11));
@@ -97,6 +101,7 @@ void tableSetup()
 	sw_tbl[2].dst.da.adr = 1;
 	sw_tbl[2].dst.da.pio = 0;
 
+#ifdef SOFTOFF_SUPPORT
 	// global timer switch (PIR): 0, 2, 4 for level type
 	// dst 3 3 0
 	timed_tbl[0].type = TYPE_DARK_SOFT_30S;
@@ -108,6 +113,7 @@ void tableSetup()
 	timed_tbl[0].dst.da.bus = 3;
 	timed_tbl[0].dst.da.adr = 3;
 	timed_tbl[0].dst.da.pio = 0;
+#endif
 	// global timer switch (PIR): 2, 2, 1 for on/off type
 	// dst 2 1 0
 	timed_tbl[0].type = TYPE_DARK_30S;
@@ -135,6 +141,10 @@ int MainTest(int test)
 	static const byte latch = 6;
 	uint8_t dadr, dpio;
 
+	Serial.print("Test Case ");
+	Serial.println(test);
+
+	Serial.println("Test Case Setup");
 	testSetup();
 	tableSetup();
 	swHdl.mode = MODE_ALRAM_HANDLING | MODE_AUTO_SWITCH;
@@ -150,10 +160,15 @@ int MainTest(int test)
 		pio_data[dadr] = 0xff;
 		/* bus, id, pio data read, mode */
 		swHdl.switchHandle(0, 1, 2);
+		Serial.println(pio_data[dadr], HEX);
+		Serial.print(" <>");
+		Serial.println(mask, HEX);
 		if (pio_data[dadr] != mask)
 			return __LINE__;
+		Serial.println("test loop");
 		testLoop();
 		// off
+		Serial.println("switch off");
 		swHdl.switchHandle(0, 1, 2);
 		if (pio_data[dadr] != 0xff)
 			return __LINE__;
@@ -271,7 +286,7 @@ int MainTest(int test)
 		// dst 3 3 0
 		dadr = timed_tbl[0].dst.da.adr;
 		dpio = timed_tbl[0].dst.da.pio;
-		timed_tbl[0].type = TYPE_DARK_SOFT_30S;
+		timed_tbl[0].type = TYPE_DARK_30S;
 		pio_data[dadr] = 0x0;
 
 		swHdl.switchHandle(0, 2, 4);
@@ -353,7 +368,7 @@ int MainTest(int test)
 		// dst 3 3 0
 		dadr = timed_tbl[0].dst.da.adr;
 		dpio = timed_tbl[0].dst.da.pio;
-		timed_tbl[0].type = TYPE_DARK_SOFT_30S;
+		timed_tbl[0].type = TYPE_DARK_30S;
 		pio_data[dadr] = 0x0;
 
 		swHdl.mode = MODE_ALRAM_HANDLING | MODE_AUTO_SWITCH;
@@ -416,6 +431,33 @@ int MainTest(int test)
 	return 0;
 }
 
+uint8_t atoh(const char *str, uint8_t offset = 0)
+{
+	uint8_t b, lo;
+
+	b = toupper(str[offset++]);
+	if (isxdigit(b))
+	{
+		if (b > '9')
+			// software offset for A-F
+			b -= 7;
+		// subtract ASCII offset
+		b -= 0x30;
+		lo = toupper(str[offset]);
+		if (lo != 0 && isxdigit(lo))
+		{
+			b = b << 4;
+			if (lo > '9')
+				lo -= 7;
+			lo -= 0x30;
+			b = b + lo;
+		}
+		return b;
+	}
+
+	return 0;
+}
+
 int main()
 {
 	int ret = 0, i;
@@ -426,13 +468,12 @@ int main()
 #endif
 	debug = 4;
 	light = 220;
-
-	for (i = 1; i < 8; i++) {
+	for (i = 1; i < 8; i++)
+	{
 		ret = MainTest(i);
 		if (ret) {
-			do {
-				Serial.print(ret);
-			} while (ret);
+			Serial.print("FAIL in ");
+			Serial.println(ret);
 		}
 	}
 	return ret;
