@@ -113,13 +113,13 @@ void TwiHost::setAlarm(uint8_t channel)
 	}
 	else {
 #ifdef DEBUG
-			if (alarmStat && debug > 4) {
-				Serial.println(F("clear alarmStat"));
-			}
-			alarmStat = 0;
-			digitalWrite(HOST_ALRM_PIN, HIGH);
-			digitalWrite(13, LOW);
+		if (alarmStat && debug > 4) {
+			Serial.println(F("clear alarmStat"));
+		}
 #endif
+		alarmStat = 0;
+		digitalWrite(HOST_ALRM_PIN, HIGH);
+		digitalWrite(13, LOW);
 	}
 }
 
