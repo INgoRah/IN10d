@@ -162,8 +162,9 @@ void setup() {
 		pinMode(4, INPUT_PULLUP);
 	if (pins & 0x4)
 		pinMode(3, INPUT_PULLUP);
+	/* D7 / Power Interval: no internal pull-up */
 	if (pins & 0x8)
-		pinMode(7, INPUT_PULLUP);
+		pinMode(7, INPUT);
 	byte mask = 0x10;
 	for (i = 9; i < 13; i++) {
 		if (pins & mask) {
@@ -410,12 +411,10 @@ void pin_loop()
 {
 	if (pinSignal == 0)
 		return;
-#ifdef DEBUG
 	if (debug > 4) {
 		Serial.print(F("PIN Signal: "));
 		Serial.println(pinSignal);
 	}
-#endif
 
 #ifdef INTERN_PIOS
 	// interrupt to host
