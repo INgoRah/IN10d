@@ -28,6 +28,7 @@
 #define DS2482_ALARM_STATUS_REGISTER         0xA8
 #define DS2482_MODE_REGISTER         0x69
 #define DS2482_DATA_REGISTER 0xA9
+#define DS2482_TEST_REGISTER         0x58
 
 #define TYPE_BRIGHTNESS 3
 
@@ -62,7 +63,7 @@ class TwiHost
 		uint8_t hostData[9];
 		byte rxBytes;
 		byte _seq, _ack;
-		uint8_t alarmSignal;
+		uint8_t alarmStat;
 		static void (*user_onCommand)(uint8_t cmd, uint8_t data);
 		void command();
 		void commandData();

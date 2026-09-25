@@ -75,13 +75,15 @@ void OwDevices::cacheInit()
 				ds2408PioGet(i, adr, true);
 				if (adr[1] < MAX_ADR) {
 					dev_vers[i][adr[1]] = 5;
+					ds2408CfgRead(i, adr, _data);
+					dev_vers[i][adr[1]] = _data[22];
 					if (debug > 0) {
 						Serial.print(i, HEX);
 						Serial.print(F("."));
-						Serial.println(adr[1], HEX);
+						Serial.print(adr[1], HEX);
+						Serial.print(F("=v"));
+						Serial.println(_data[22]);
 					}
-					ds2408CfgRead(i, adr, _data);
-					dev_vers[i][adr[1]] = _data[22];
 				}
 			}
 		}
@@ -106,7 +108,7 @@ void OwDevices::adrGen(uint8_t bus, uint8_t adr[8], uint8_t id)
 }
 
 /* version 2 does not support long press detection
-   version 7 supports own timer a dimming  via spécial 
+   version 7 supports own timer a dimming  via spécial
    command C5 */
 uint8_t OwDevices::getVersion(uint8_t bus, uint8_t id)
 {
@@ -430,7 +432,7 @@ uint8_t OwDevices::ds2408xPinSet(byte bus, uint8_t* addr, uint8_t pio, uint8_t l
 
 	Serial.print(F("CRC mismatch calc="));
 	Serial.println(~crc16, HEX);
-	
+
 	return 0xff;
 }
 

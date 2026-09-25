@@ -1020,7 +1020,7 @@ bool SwitchHandler::alarmHandler(uint8_t busNr)
 		//mode = MODE_ALRAM_HANDLING | MODE_ALRAM_POLLING | MODE_AUTO_SWITCH;
 		if ((mode & MODE_ALRAM_HANDLING) == 0) {
 			// interrupt to host
-			host.setAlarm(busNr);
+			host.setAlarm(busNr + 1);
 			return true;
 		}
 		if (adr[0] == 0x29) {
@@ -1029,22 +1029,24 @@ bool SwitchHandler::alarmHandler(uint8_t busNr)
 			res = _devs->ds2408RegRead(busNr, adr, data);
 			/* fill data for use in switchHandle */
 			if (res == 0xaa || res == 0xff) {
-				// loop over all set bits
-				// cur_latch is reduced by each call to bitnumber
-				cur_latch = data[2];
+				if (data[2] != 0xff) {
+					// loop over all set bits
+					// cur_latch is reduced by each call to bitnumber
+					cur_latch = data[2];
 #ifdef DEBUG
-				if (debug > 0) {
-					Serial.print(F(" = "));
-					Serial.print(cur_latch, HEX);
-					Serial.print(F(" S="));
-					Serial.println(data[5], HEX);
-				}
+					if (debug > 0) {
+						Serial.print(F(" = "));
+						Serial.print(cur_latch, HEX);
+						Serial.print(F(" S="));
+						Serial.println(data[5], HEX);
+					}
 #endif
-				if (data[5] & 0x40) {
+				}
+				if (data[5] != 0xff && data[5] & 0x40) {
 					/* status in 5 signals a dimming down */
 					host.addEvent (DIMMING_DOWN, busNr, adr[1], 255);
 				}
-				if (data[5] & 0x88) {
+				if (data[5] != 0xff && data[5] & 0x88) {
 					uint8_t i;
 					Serial.println("Watchdog! ");
 					for (i = 0; i < 9; i++) {
